@@ -43,7 +43,7 @@ jobs:
       # 3. Save test results  
       - name: Save test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: meticulous-test-results
           path: .meticulous/
