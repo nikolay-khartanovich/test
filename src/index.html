@@ -6,27 +6,58 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  
-  <!-- Meticulous script - only loads on production domain -->
   <script>
-    (function() {
-      // IMPORTANT: Specify your production domain name here
-      const PRODUCTION_DOMAIN = '5da4-16-170-157-7.ngrok-free.app'; // Replace with your actual domain
+    (function initializeMeticulous() {
+      const config = {
+        recordingToken: 'Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd',
+        isProduction: true,
+        allowedDomains: [
+          'ngrok-free.app',
+        ],
+        debug: false
+      };
       
-      // Check if we're on the production domain
-      const currentHostname = window.location.hostname;
+      const getHostname = (url) => {
+        try {
+          return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        } catch (e) {
+          return url;
+        }
+      };
       
-      // Load Meticulous ONLY on the production domain
-      if (currentHostname === PRODUCTION_DOMAIN || 
-          currentHostname.endsWith('.' + PRODUCTION_DOMAIN)) {
+      const isAllowedHost = () => {
+        const currentHostname = window.location.hostname;
+        
+        if (/^localhost$|^127\.|^192\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.|^::1$|^fe80:/i.test(currentHostname)) {
+          logDebug('Meticulous disabled on local development environment');
+          return false;
+        }
+        
+        return config.allowedDomains.some(domain => {
+          domain = getHostname(domain);
+          return currentHostname === domain || 
+                 (domain.startsWith('.') && currentHostname.endsWith(domain)) ||
+                 currentHostname.endsWith('.' + domain);
+        });
+      };
+      
+      const logDebug = (message) => {
+        if (config.debug) {
+          console.log(`[Meticulous] ${message}`);
+        }
+      };
+      
+      if (isAllowedHost()) {
+        logDebug(`Activating on domain: ${window.location.hostname}`);
         
         const script = document.createElement('script');
-        script.setAttribute('data-recording-token', 'Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd');
-        script.setAttribute('data-is-production-environment', 'true');
+        script.setAttribute('data-recording-token', config.recordingToken);
+        script.setAttribute('data-is-production-environment', config.isProduction);
         script.src = 'https://snippet.meticulous.ai/v1/meticulous.js';
         script.async = true;
         
         document.head.appendChild(script);
+        logDebug('Script loaded successfully');
       }
     })();
   </script>
