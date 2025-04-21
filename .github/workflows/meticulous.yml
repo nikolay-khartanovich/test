@@ -1,23 +1,19 @@
-# Workflow for local application launch and running Meticulous tests
+# Workflow for testing application with Meticulous
 
-name: Meticulous
+name: Meticulous Tests
 
-# Important: The workflow should run on both pushes to the main branch and pull requests.
-# It needs to run on the main branch as it will use results
-# from the PR's base commit on the main branch for comparison.
+# Workflow trigger configuration
 on:
+  # Run on push to main branch
   push:
     branches:
-      - master
+      - main
+  # Run on pull requests
   pull_request: {}
-  # Important: We need the workflow to run on workflow_dispatch events
-  # so Meticulous can run the workflow on the base commit for comparison
-  # if an existing workflow hasn't run yet
+  # Manual trigger option (required for Meticulous)
   workflow_dispatch: {}
 
-# Important: The workflow needs all permissions listed below.
-# These permissions are mainly needed to publish and update check status and
-# feedback comment in your PR. Meticulous won't work without them.
+# Required permissions for Meticulous to work
 permissions:
   actions: write
   contents: read
@@ -26,48 +22,28 @@ permissions:
   statuses: read
 
 jobs:
-  test:
-    name: Change Report
+  meticulous-test:
+    name: Visual Regression Tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Clone repository
+      # 1. Environment setup
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js LTS
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}
-
-      - name: Install dependencies
-        run: |
-          npm ci
-
-      - name: Install Angular CLI
-        run: |
-          npm install -g @angular/cli
-
-      - name: Build project
-        run: |
-          ng build
-
-      - name: Start project
-        run: |
-          ng serve --port 4200 &
-          sleep 5
-
+      # 2. Run Meticulous tests on production domain
       - name: Run Meticulous tests
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Angular server URL on port 4200
-          app-url: "http://localhost:4200/"
+          # IMPORTANT: Specify your production site URL here
+          app-url: "https://5da4-16-170-157-7.ngrok-free.app/"
+          max-wait-time: "90"
+          
+      # 3. Save test results  
+      - name: Save test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: meticulous-test-results
+          path: .meticulous/
