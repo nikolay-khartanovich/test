@@ -1,19 +1,23 @@
-# Workflow for testing the application through Meticulous
+# Workflow for local application launch and running Meticulous tests
 
-name: Meticulous Tests
+name: Meticulous
 
-# Workflow triggers on the following events
+# Important: The workflow should run on both pushes to the main branch and pull requests.
+# It needs to run on the main branch as it will use results
+# from the PR's base commit on the main branch for comparison.
 on:
-  # On push to main branch
   push:
     branches:
-      - main
-  # On pull request creation
+      - master
   pull_request: {}
-  # Manual trigger option
+  # Important: We need the workflow to run on workflow_dispatch events
+  # so Meticulous can run the workflow on the base commit for comparison
+  # if an existing workflow hasn't run yet
   workflow_dispatch: {}
 
-# Required permissions
+# Important: The workflow needs all permissions listed below.
+# These permissions are mainly needed to publish and update check status and
+# feedback comment in your PR. Meticulous won't work without them.
 permissions:
   actions: write
   contents: read
@@ -22,54 +26,48 @@ permissions:
   statuses: read
 
 jobs:
-  meticulous-test:
-    name: Visual Regression Testing
+  test:
+    name: Change Report
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Code preparation
-      - name: Checkout code
+      - name: Clone repository
         uses: actions/checkout@v4
 
-      # 2. Node.js setup
-      - name: Setup Node.js
+      - name: Setup Node.js LTS
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
 
-      # 3. Dependencies installation
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}
+
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
 
-      # 4. Angular CLI installation
       - name: Install Angular CLI
-        run: npm install -g @angular/cli
+        run: |
+          npm install -g @angular/cli
 
-      # 5. Build application
-      - name: Build Angular application
-        run: ng build
+      - name: Build project
+        run: |
+          ng build
 
-      # 6. Start local server for testing
-      - name: Start Angular server
+      - name: Start project
         run: |
           ng serve --port 4200 &
-          echo "Waiting for server to start..."
-          sleep 10
+          sleep 5
 
-      # 7. Run Meticulous tests
       - name: Run Meticulous tests
-        uses: alwaysmeticulous/report-diffs-action@v1
+        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Local server for testing
-          app-url: "http://localhost:4200"
-          max-wait-time: "120"
-          
-      # 8. Save results
-      - name: Save results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: meticulous-test-results
-          path: .meticulous/
+          # Angular server URL on port 4200
+          app-url: "http://localhost:4200/"
