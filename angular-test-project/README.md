@@ -1,6 +1,37 @@
-# AngularTestProject
+# Angular Test Project
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 19.2.8.
+Простое тестовое приложение Angular с двумя страницами и кнопками навигации.
+
+## Настройка Meticulous для тестирования
+
+Проект настроен для использования Meticulous для тестирования и отслеживания изменений в пользовательском интерфейсе. 
+
+### Локальный запуск:
+
+1. Установите зависимости:
+   ```
+   npm install
+   ```
+
+2. Запустите приложение:
+   ```
+   ng serve
+   ```
+
+3. Откройте браузер по адресу http://localhost:4200
+
+### Настройка GitHub Actions для Meticulous:
+
+1. Получите API-токен Meticulous из панели управления Meticulous.
+
+2. Добавьте секрет в настройки GitHub репозитория:
+   - В GitHub репозитории перейдите в "Settings" -> "Secrets and variables" -> "Actions"
+   - Нажмите "New repository secret"
+   - В поле "Name" введите `METICULOUS_API_TOKEN`
+   - В поле "Value" вставьте ваш Meticulous API-токен
+   - Нажмите "Add secret"
+
+После этих настроек GitHub Actions будет автоматически запускать тесты Meticulous при push в main ветку и при создании pull request-ов.
 
 ## Development server
 

@@ -1,0 +1,76 @@
+# Workflow для локального запуска приложения и выполнения Meticulous тестов
+
+name: Meticulous
+
+# Важно: Рабочий процесс должен запускаться как при push-ах в основную ветку, так и в pull request-ах.
+# Он должен запускаться в основной ветке, так как будет использовать результаты
+# из базового коммита PR в основной ветке для сравнения.
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
+  # Важно: Нам нужно, чтобы рабочий процесс запускался по событиям workflow_dispatch,
+  # чтобы Meticulous мог запустить рабочий процесс на базовом коммите для сравнения,
+  # если существующий рабочий процесс еще не запускался
+  workflow_dispatch: {}
+
+# Важно: Рабочему процессу нужны все указанные ниже разрешения.
+# Эти разрешения в основном нужны для публикации и обновления статуса проверки и
+# комментария с обратной связью в вашем PR. Meticulous не будет работать без них.
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: read
+
+jobs:
+  test:
+    name: Отчет об изменениях
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Кэширование node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}
+
+      - name: Установка зависимостей
+        run: |
+          npm ci
+
+      - name: Установка Angular CLI
+        run: |
+          npm install -g @angular/cli
+
+      - name: Сборка проекта
+        run: |
+          ng build
+
+      - name: Запуск проекта
+        # Запускаем Angular приложение на порту 4200 (стандартный порт для Angular)
+        # Задержка в 5 секунд нужна для того, чтобы приложение успело запуститься
+        # перед началом тестов Meticulous
+        run: |
+          ng serve --port 4200 &
+          sleep 5
+
+      - name: Запуск Meticulous тестов
+        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
+        with:
+          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
+          # URL сервера Angular на порту 4200
+          app-url: "http://localhost:4200/" 
