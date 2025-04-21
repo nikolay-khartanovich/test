@@ -1,19 +1,19 @@
-# Workflow for testing application with Meticulous
+# Workflow for testing the application through Meticulous
 
 name: Meticulous Tests
 
-# Workflow trigger configuration
+# Workflow triggers on the following events
 on:
-  # Run on push to main branch
+  # On push to main branch
   push:
     branches:
       - main
-  # Run on pull requests
+  # On pull request creation
   pull_request: {}
-  # Manual trigger option (required for Meticulous)
+  # Manual trigger option
   workflow_dispatch: {}
 
-# Required permissions for Meticulous to work
+# Required permissions
 permissions:
   actions: write
   contents: read
@@ -23,25 +23,51 @@ permissions:
 
 jobs:
   meticulous-test:
-    name: Visual Regression Tests
+    name: Visual Regression Testing
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Environment setup
+      # 1. Code preparation
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Run Meticulous tests on production domain
+      # 2. Node.js setup
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # 3. Dependencies installation
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Angular CLI installation
+      - name: Install Angular CLI
+        run: npm install -g @angular/cli
+
+      # 5. Build application
+      - name: Build Angular application
+        run: ng build
+
+      # 6. Start local server for testing
+      - name: Start Angular server
+        run: |
+          ng serve --port 4200 &
+          echo "Waiting for server to start..."
+          sleep 10
+
+      # 7. Run Meticulous tests
       - name: Run Meticulous tests
-        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
+        uses: alwaysmeticulous/report-diffs-action@v1
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # IMPORTANT: Specify your production site URL here
-          app-url: "https://5da4-16-170-157-7.ngrok-free.app/"
-          max-wait-time: "90"
+          # Local server for testing
+          app-url: "http://localhost:4200"
+          max-wait-time: "120"
           
-      # 3. Save test results  
-      - name: Save test results
+      # 8. Save results
+      - name: Save results
         if: always()
         uses: actions/upload-artifact@v4
         with:
