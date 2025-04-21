@@ -7,10 +7,107 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   
-  <script
-    data-recording-token="Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd"
-    data-is-production-environment="false"
-    src="https://snippet.meticulous.ai/v1/meticulous.js">
+  <script>
+    (function initializeMeticulous() {
+      const config = {
+        recordingToken: 'Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd',
+        isProduction: true,
+        allowedDomains: [
+          '*ngrok-free.app*', // Any ngrok domain
+          '*ngrok.io*',       // Old format of ngrok domains
+        ],
+        debug: true // Debug mode ENABLED for diagnostics
+      };
+      
+      const getHostname = (url) => {
+        try {
+          return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        } catch (e) {
+          return url;
+        }
+      };
+      
+      // Simplified domain check with wildcard support
+      const matchDomain = (pattern, hostname) => {
+        // Convert wildcards to regex patterns
+        const regexPattern = pattern
+          .replace(/\./g, '\\.')
+          .replace(/\*/g, '.*');
+        return new RegExp('^' + regexPattern + '$').test(hostname);
+      };
+      
+      const isAllowedHost = () => {
+        const currentHostname = window.location.hostname;
+        
+        // Always log current domain for diagnostics
+        console.log('[Meticulous] Current domain: ' + currentHostname);
+        
+        // Disable on localhost
+        if (/^localhost$|^127\./i.test(currentHostname)) {
+          console.log('[Meticulous] Disabled in local environment');
+          return false;
+        }
+        
+        // Check against domain patterns with wildcard support
+        const allowed = config.allowedDomains.some(pattern => {
+          const isMatch = matchDomain(pattern, currentHostname) || 
+                         currentHostname.includes(pattern.replace(/\*/g, ''));
+          if (isMatch) {
+            console.log('[Meticulous] Match with pattern: ' + pattern);
+          }
+          return isMatch;
+        });
+        
+        if (!allowed) {
+          console.log('[Meticulous] Domain not in allowed list. List:', config.allowedDomains);
+        }
+        
+        return allowed;
+      };
+      
+      const logDebug = (message) => {
+        if (config.debug) {
+          console.log(`[Meticulous] ${message}`);
+        }
+      };
+      
+      // ALWAYS output basic information for diagnostics
+      console.log('[Meticulous] Starting initialization...');
+      console.log('[Meticulous] User Agent: ' + navigator.userAgent);
+      console.log('[Meticulous] URL: ' + window.location.href);
+      
+      if (isAllowedHost()) {
+        console.log('[Meticulous] Activation on domain: ' + window.location.hostname);
+        
+        try {
+          const script = document.createElement('script');
+          script.setAttribute('data-recording-token', config.recordingToken);
+          script.setAttribute('data-is-production-environment', config.isProduction);
+          script.src = 'https://snippet.meticulous.ai/v1/meticulous.js';
+          script.async = true;
+          
+          // Add event handlers for diagnostics
+          script.onload = () => console.log('[Meticulous] Script loaded successfully');
+          script.onerror = (err) => console.error('[Meticulous] Script loading error:', err);
+          
+          document.head.appendChild(script);
+          console.log('[Meticulous] Script added to DOM');
+          
+          // Check after 3 seconds if Meticulous object is available
+          setTimeout(() => {
+            if (window.meticulous) {
+              console.log('[Meticulous] Meticulous object available. Recording should work.');
+            } else {
+              console.warn('[Meticulous] Meticulous object NOT found. Recording may not work!');
+            }
+          }, 3000);
+        } catch (e) {
+          console.error('[Meticulous] Initialization error:', e);
+        }
+      } else {
+        console.log('[Meticulous] NOT activated on this domain');
+      }
+    })();
   </script>
   <!--Meticulous snippet should be added before your app -->
 </head>
