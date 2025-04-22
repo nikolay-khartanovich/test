@@ -1,73 +1,215 @@
-# Workflow for local application launch and running Meticulous tests
+name: Client10 PR Meticulous
 
-name: Meticulous
-
-# Important: The workflow should run on both pushes to the main branch and pull requests.
-# It needs to run on the main branch as it will use results
-# from the PR's base commit on the main branch for comparison.
 on:
-  push:
+  pull_request:
     branches:
-      - master
-  pull_request: {}
-  # Important: We need the workflow to run on workflow_dispatch events
-  # so Meticulous can run the workflow on the base commit for comparison
-  # if an existing workflow hasn't run yet
-  workflow_dispatch: {}
+      - test-br
+    types: 
+      - opened
+      - reopened
+      - synchronize
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR Number (filled automatically)'
+        required: false
+        type: string
+      action_type:
+        description: 'Action'
+        required: true
+        default: 'record'
+        type: choice
+        options:
+          - record
+          - compare_with_latest
 
-# Important: The workflow needs all permissions listed below.
-# These permissions are mainly needed to publish and update check status and
-# feedback comment in your PR. Meticulous won't work without them.
 permissions:
+  pull-requests: write
   actions: write
   contents: read
-  issues: write
-  pull-requests: write
-  statuses: read
+  checks: write
 
 jobs:
-  test:
-    name: Change Report
+  meticulous-workflow:
+    name: Meticulous Workflow
     runs-on: ubuntu-latest
-
     steps:
-      - name: Clone repository
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js LTS
-        uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: npm
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'Client10' }}
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
+      - name: Add PR comment with buttons
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
         with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+            const repoOwner = context.repo.owner;
+            const repoName = context.repo.repo;
+            
+            // Create buttons (links) to directly trigger workflow
+            const recordUrl = `https://github.com/${repoOwner}/${repoName}/actions/workflows/client10-pr-meticulous.yml/dispatches?workflow_inputs[pr_number]=${prNumber}&workflow_inputs[action_type]=record&ref=Client10`;
+            const compareUrl = `https://github.com/${repoOwner}/${repoName}/actions/workflows/client10-pr-meticulous.yml/dispatches?workflow_inputs[pr_number]=${prNumber}&workflow_inputs[action_type]=compare_with_latest&ref=Client10`;
+            
+            // Comment with direct links to trigger
+            const comment = `## 🔍 Meticulous for Client10 branch
+            
+            ### Meticulous actions for PR #${prNumber}:
+            
+            - [🟢 Record current state](${recordUrl})
+            - [🔵 Compare with latest recording](${compareUrl})
+            
+            Choose an action to start Meticulous check for this PR.
+            `;
+            
+            // Add comment to PR
+            await github.rest.issues.createComment({
+              owner: repoOwner,
+              repo: repoName,
+              issue_number: prNumber,
+              body: comment
+            });
+            
+            // Add check with information
+            await github.rest.checks.create({
+              owner: repoOwner,
+              repo: repoName,
+              name: 'Meticulous Testing',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: 'neutral',
+              output: {
+                title: 'Meticulous testing available',
+                summary: 'Check PR comment to start recording or comparison with Meticulous.'
+              }
+            });
 
-      - name: Install dependencies
-        run: |
-          npm ci
+      - name: Notify PR about Meticulous run
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.pr_number != ''
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = '${{ github.event.inputs.pr_number }}';
+            const actionType = '${{ github.event.inputs.action_type }}';
+            const repoOwner = context.repo.owner;
+            const repoName = context.repo.repo;
+            
+            // Add comment about action start
+            await github.rest.issues.createComment({
+              owner: repoOwner,
+              repo: repoName,
+              issue_number: prNumber,
+              body: `🚀 Started Meticulous in mode: **${actionType}**\n\nProcess is running...`
+            });
+            
+            // Create check to display status
+            try {
+              const pr = await github.rest.pulls.get({
+                owner: repoOwner,
+                repo: repoName,
+                pull_number: prNumber
+              });
+              
+              await github.rest.checks.create({
+                owner: repoOwner,
+                repo: repoName,
+                name: `Meticulous ${actionType}`,
+                head_sha: pr.data.head.sha,
+                status: 'in_progress',
+                output: {
+                  title: `Started Meticulous: ${actionType}`,
+                  summary: `${actionType === 'record' ? 'Recording' : 'Comparison'} process has started.`
+                }
+              });
+            } catch (error) {
+              console.log(`Error creating check: ${error}`);
+            }
 
-      - name: Install Angular CLI
-        run: |
-          npm install -g @angular/cli
-
-      - name: Build project
-        run: |
-          ng build
-
-      - name: Start project
-        run: |
-          ng serve --port 4200 &
-          sleep 5
-
-      - name: Run Meticulous tests
-        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
+      - name: Run Meticulous record
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action_type == 'record'
+        uses: alwaysmeticulous/record-action@v1
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Angular server URL on port 4200
-          app-url: "http://localhost:4200/"
+          app-url: 'http://localhost:8080'
+          recording-name: 'Client10 Recording ${{ github.run_number }}'
+          commit-sha: ${{ github.sha }}
+
+      - name: Setup for Meticulous
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          npm ci
+          npm run build -- --configuration production
+          npx serve -s dist/angular-test-project -l 8080 &
+          sleep 5
+
+      - name: Get latest recording ID
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action_type == 'compare_with_latest'
+        id: get_latest_recording
+        run: |
+          sudo apt-get install jq -y
+          
+          response=$(curl -s -H "Authorization: Bearer ${{ secrets.METICULOUS_API_TOKEN }}" \
+                   "https://api.meticulous.ai/v1/recordings?filter=branchIdentifier=Client10&sort=-createdAt&limit=1")
+          
+          recording_id=$(echo $response | jq -r '.data[0].id')
+          
+          if [ "$recording_id" == "null" ] || [ -z "$recording_id" ]; then
+            echo "Error: Could not find previous recording for Client10 branch"
+            exit 1
+          fi
+          
+          echo "Found latest recording with ID: $recording_id"
+          echo "recording_id=$recording_id" >> $GITHUB_OUTPUT
+
+      - name: Run Meticulous comparison
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action_type == 'compare_with_latest'
+        uses: alwaysmeticulous/report-diffs-action@v1
+        with:
+          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
+          app-url: 'http://localhost:8080'
+          base-recording-id: ${{ steps.get_latest_recording.outputs.recording_id }}
+          commit-sha: ${{ github.sha }}
+
+      - name: Update PR with results
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.pr_number != ''
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = '${{ github.event.inputs.pr_number }}';
+            const actionType = '${{ github.event.inputs.action_type }}';
+            const repoOwner = context.repo.owner;
+            const repoName = context.repo.repo;
+            
+            await github.rest.issues.createComment({
+              owner: repoOwner,
+              repo: repoName,
+              issue_number: prNumber,
+              body: `✅ Meticulous ${actionType} completed!\n\nCheck results in [Meticulous Dashboard](https://app.meticulous.ai/)`
+            });
+            
+            try {
+              const pr = await github.rest.pulls.get({
+                owner: repoOwner,
+                repo: repoName,
+                pull_number: prNumber
+              });
+              
+              await github.rest.checks.create({
+                owner: repoOwner,
+                repo: repoName,
+                name: `Meticulous ${actionType}`,
+                head_sha: pr.data.head.sha,
+                status: 'completed',
+                conclusion: 'success',
+                output: {
+                  title: `Meticulous ${actionType} completed`,
+                  summary: `${actionType === 'record' ? 'Recording' : 'Comparison'} process completed successfully.`
+                }
+              });
+            } catch (error) {
+              console.log(`Error updating check: ${error}`);
+            }
