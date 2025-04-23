@@ -10,7 +10,7 @@ on:
     branches:
       - master
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened]
   # Important: We need the workflow to run on workflow_dispatch events
   # so Meticulous can run the workflow on the base commit for comparison
   # if an existing workflow hasn't run yet
@@ -28,8 +28,7 @@ permissions:
 
 jobs:
   test:
-    name: Change Report
-    if: github.event_name != 'issue_comment'
+    name: Run Meticulous tests
     runs-on: ubuntu-latest
 
     steps:
@@ -74,4 +73,5 @@ jobs:
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
           # Angular server URL on port 4200
-          app-url: "http://localhost:4200/"
+          app-url: "http://qa.app.efficentl.com"
+          base-url: "https://uat.app.efficentl.com"
