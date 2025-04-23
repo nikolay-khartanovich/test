@@ -1,55 +1,25 @@
-# Файл удален, так как весь функционал перемещен в add-meticulous-button.yml
+# Workflow for local application launch and running Meticulous tests
 
-name: "Meticulous Tests"
+name: Meticulous
 
+# Workflow запускается только по комментарию /meticulous в PR
 on:
-  pull_request_target:
-    types: [opened, reopened]
   issue_comment:
     types: [created]
 
+# Important: The workflow needs all permissions listed below.
+# These permissions are mainly needed to publish and update check status and
+# feedback comment in your PR. Meticulous won't work without them.
 permissions:
-  contents: read
-  pull-requests: write
   actions: write
+  contents: read
   issues: write
-  statuses: write
+  pull-requests: write
+  statuses: read
 
 jobs:
-  # Добавляет комментарий с инструкциями при создании PR
-  add-initial-comment:
-    if: github.event_name == 'pull_request_target'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add information comment
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            
-            const body = `## Meticulous тесты
-            
-            Для запуска Meticulous тестов на этом PR, добавьте комментарий с текстом:
-            
-            \`\`\`
-            /meticulous
-            \`\`\`
-            
-            Другие доступные команды:
-            \`/help\` или \`/помощь\` - показать справку
-            `;
-            
-            await github.rest.issues.createComment({
-              issue_number,
-              owner,
-              repo,
-              body
-            });
-
-  # Запускает Meticulous тесты при комментарии /meticulous через workflow_dispatch
-  trigger-meticulous:
+  # Запускает workflow через комментарий /meticulous в PR
+  trigger-from-comment:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/meticulous')
     runs-on: ubuntu-latest
     steps:
@@ -67,100 +37,43 @@ jobs:
               content: 'rocket'
             });
 
-      - name: Get PR branch
-        uses: xt0rted/pull-request-comment-branch@v1
-        id: comment-branch
+      - name: Clone repository
+        uses: actions/checkout@v4
 
-      - name: Notify PR about start
-        uses: actions/github-script@v6
+      - name: Setup Node.js LTS
+        uses: actions/setup-node@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner,
-              repo,
-              body: '🚀 Запускаю Meticulous тесты. Результаты будут доступны здесь после завершения.'
-            });
+          node-version: "20"
+          cache: npm
 
-      - name: Set latest commit status as pending
-        uses: myrotvorets/set-commit-status-action@master
+      - name: Cache node_modules
+        uses: actions/cache@v4
         with:
-          sha: ${{ steps.comment-branch.outputs.head_sha }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          context: "Meticulous Tests"
-          status: pending
-          description: "Запуск Meticulous тестов..."
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}
 
-      - name: Get PR info
-        uses: actions/github-script@v6
-        id: pr-info
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: issue_number
-            });
-            
-            return {
-              head_ref: pr.head.ref,
-              head_sha: pr.head.sha,
-              base_ref: pr.base.ref,
-              base_sha: pr.base.sha,
-              pr_number: issue_number
-            };
+      - name: Install dependencies
+        run: |
+          npm ci
 
-      - name: Trigger Meticulous Runner Workflow
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: meticulous-runner.yml
-          ref: ${{ fromJson(steps.pr-info.outputs.result).head_ref }}
-          inputs: |
-            {
-              "head_ref": "${{ fromJson(steps.pr-info.outputs.result).head_ref }}",
-              "head_sha": "${{ fromJson(steps.pr-info.outputs.result).head_sha }}",
-              "base_ref": "${{ fromJson(steps.pr-info.outputs.result).base_ref }}",
-              "base_sha": "${{ fromJson(steps.pr-info.outputs.result).base_sha }}",
-              "pr_number": "${{ fromJson(steps.pr-info.outputs.result).pr_number }}"
-            }
+      - name: Install Angular CLI
+        run: |
+          npm install -g @angular/cli
 
-  # Показывает справку при комментарии /help или /помощь
-  add-help-comment:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && (contains(github.event.comment.body, '/help') || contains(github.event.comment.body, '/помощь'))
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add help comment
-        uses: actions/github-script@v6
+      - name: Build project
+        run: |
+          ng build
+
+      - name: Start project
+        run: |
+          ng serve --port 4200 &
+          sleep 5
+
+      - name: Run Meticulous tests
+        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            
-            const body = `## Команды Meticulous
-            
-            Доступные команды для этого PR:
-            
-            - \`/meticulous\` - Запустить проверку Meticulous
-            - \`/help\` или \`/помощь\` - Показать эту справку
-            `;
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner,
-              repo,
-              body
-            });
-            
-            await github.rest.reactions.createForIssueComment({
-              owner,
-              repo,
-              comment_id: context.payload.comment.id,
-              content: 'eyes'
-            });
+          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
+          # Angular server URL on port 4200
+          app-url: "http://localhost:4200/"
