@@ -69,7 +69,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = context.payload.inputs.pr_number;
+            const prNumber = context.issue.number;
             
             let body = '## Meticulous Test Results\n\n';
             
