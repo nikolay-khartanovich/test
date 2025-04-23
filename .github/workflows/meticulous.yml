@@ -129,29 +129,3 @@ jobs:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
           # Angular server URL on port 4200
           app-url: "http://localhost:4200/"
-
-      - name: Add result comment
-        if: always()
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            const prNumber = context.payload.inputs.pr_number;
-            
-            let body = '## Meticulous Test Results\n\n';
-            
-            if (context.job.status === 'success') {
-              body += '✅ Тесты успешно завершены. Результаты будут доступны в Checks tab.\n';
-              body += 'Для просмотра результатов перейдите в Checks tab и нажмите на "Meticulous Test Results".';
-            } else {
-              body += '❌ Произошла ошибка при выполнении тестов.\n';
-              body += 'Пожалуйста, проверьте логи для деталей.';
-            }
-            
-            await github.rest.issues.createComment({
-              issue_number: prNumber,
-              owner,
-              repo,
-              body
-            });
