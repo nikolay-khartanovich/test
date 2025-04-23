@@ -1,0 +1,64 @@
+name: Add Meticulous Button to PR
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  add-button:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add Comment with Meticulous Button
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            
+            // Create URL for manual workflow trigger
+            const workflowId = 'meticulous.yml';
+            const triggerUrl = `https://github.com/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`;
+            
+            // Create comment with markdown button
+            const commentBody = `
+            ## Meticulous Change Report
+            
+            To run the Meticulous Change Report on this PR, click the button below:
+            
+            [![Run Meticulous](https://img.shields.io/badge/Run-Meticulous%20Report-blue)](${triggerUrl})
+            
+            > Note: You'll need to select the branch of this PR and click "Run workflow" on the page that opens.
+            `;
+            
+            // Check if we already posted this comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.body.includes('Meticulous Change Report')
+            );
+            
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: commentBody
+              });
+            } 
