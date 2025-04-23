@@ -1,10 +1,10 @@
-name: Add Meticulous Button to PR
+name: Meticulous One-Click
 
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
-  issue_comment:
-    types: [created]
+  repository_dispatch:
+    types: [run-meticulous-test]
 
 permissions:
   pull-requests: write
@@ -17,7 +17,7 @@ jobs:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
-      - name: Add Comment with Meticulous Button
+      - name: Add One-Click Button
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -25,17 +25,20 @@ jobs:
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             
-            // Create comment with button command
+            // Create workflow dispatch URL
+            const workflowUrl = `https://github.com/${owner}/${repo}/actions/workflows/meticulous-webhook-handler.yml/dispatch`;
+            
+            // Create comment with button that triggers the action
             const commentBody = `
             ## Запуск Meticulous Change Report
+
+            <p align="center">
+              <a href="${workflowUrl}?ref=master&pr_number=${issue_number}">
+                <img src="https://img.shields.io/badge/ЗАПУСТИТЬ-ПРОВЕРКУ-44CC11?style=for-the-badge" alt="Запустить проверку" width="300" />
+              </a>
+            </p>
             
-            Чтобы запустить проверку Meticulous на этом PR, просто оставьте комментарий с текстом:
-            
-            \`\`\`
-            /run-meticulous
-            \`\`\`
-            
-            Результаты будут опубликованы в этом PR автоматически после завершения проверки.
+            > Нажмите кнопку выше для запуска проверки Meticulous прямо в этом PR
             `;
             
             // Check if we already posted this comment
@@ -67,24 +70,30 @@ jobs:
               });
             }
 
+  # Setup a GitHub App to handle repository_dispatch events for button clicks
+  # This part requires a separate GitHub App with proper credentials
+  # The workflow below demonstrates what happens after the button is clicked
+
   run-meticulous:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/run-meticulous')
+    if: |
+      (github.event_name == 'repository_dispatch' && 
+      github.event.action == 'run-meticulous-test')
     runs-on: ubuntu-latest
     steps:
-      - name: Acknowledge comment
+      - name: Determine PR number
+        id: pr_info
+        run: |
+          PR_NUMBER=$(echo "${{ github.event.client_payload.pr_number }}")
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Notify PR start
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            
-            await github.rest.reactions.createForIssueComment({
-              owner,
-              repo,
-              comment_id: context.payload.comment.id,
-              content: 'rocket'
-            });
+            const issue_number = ${{ steps.pr_info.outputs.pr_number }};
             
             await github.rest.issues.createComment({
               owner,
@@ -93,30 +102,10 @@ jobs:
               body: '🚀 Запускаю Meticulous Change Report для этого PR. Результаты будут доступны здесь после завершения.'
             });
 
-      - name: Get PR branch information
-        id: pr_info
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: issue_number
-            });
-            
-            return {
-              ref: pr.head.ref,
-              sha: pr.head.sha
-            };
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.pr_info.outputs.result.ref }}
+          fetch-depth: 0  # Full history for PR analysis
 
       - name: Setup Node.js LTS
         uses: actions/setup-node@v4
@@ -163,7 +152,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
+            const issue_number = ${{ steps.pr_info.outputs.pr_number }};
             
             let resultsMessage = '';
             if ('${{ steps.meticulous.outcome }}' === 'success') {
