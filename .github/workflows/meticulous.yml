@@ -9,7 +9,8 @@ on:
   push:
     branches:
       - master
-  pull_request: {}
+  pull_request:
+    types: [opened, reopened, synchronize]
   # Important: We need the workflow to run on workflow_dispatch events
   # so Meticulous can run the workflow on the base commit for comparison
   # if an existing workflow hasn't run yet
