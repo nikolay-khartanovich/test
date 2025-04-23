@@ -87,10 +87,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Get base branch on PR
+        if: github.event_name == 'pull_request'
+        id: get-base-branch
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            return github.context.payload.pull_request.base.ref;
+          result-encoding: string
+      
       - name: Clone repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: ${{ github.event_name == 'pull_request' && steps.get-base-branch.outputs.result || github.event.inputs.branch || github.ref }}
 
       - name: Setup Node.js LTS
         uses: actions/setup-node@v4
