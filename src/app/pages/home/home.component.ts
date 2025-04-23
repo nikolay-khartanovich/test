@@ -60,7 +60,7 @@ export class HomeComponent {
   inputText: string = '';
   
   incrementCount() {
-    this.clickCount += 13;
+    this.clickCount += 15;
   }
   
   onInputChange() {
