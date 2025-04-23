@@ -14,7 +14,11 @@ on:
   # Important: We need the workflow to run on workflow_dispatch events
   # so Meticulous can run the workflow on the base commit for comparison
   # if an existing workflow hasn't run yet
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR номер'
+        required: true
   issue_comment:
     types: [created]
 
