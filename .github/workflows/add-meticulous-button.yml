@@ -3,12 +3,18 @@ name: Add Meticulous Button to PR
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
 
 permissions:
   pull-requests: write
+  actions: write
+  contents: read
+  issues: write
 
 jobs:
   add-button:
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
       - name: Add Comment with Meticulous Button
@@ -19,19 +25,17 @@ jobs:
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             
-            // Create URL for manual workflow trigger
-            const workflowId = 'meticulous.yml';
-            const triggerUrl = `https://github.com/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`;
-            
-            // Create comment with markdown button
+            // Create comment with button command
             const commentBody = `
-            ## Meticulous Change Report
+            ## Запуск Meticulous Change Report
             
-            To run the Meticulous Change Report on this PR, click the button below:
+            Чтобы запустить проверку Meticulous на этом PR, просто оставьте комментарий с текстом:
             
-            [![Run Meticulous](https://img.shields.io/badge/Run-Meticulous%20Report-blue)](${triggerUrl})
+            \`\`\`
+            /run-meticulous
+            \`\`\`
             
-            > Note: You'll need to select the branch of this PR and click "Run workflow" on the page that opens.
+            Результаты будут опубликованы в этом PR автоматически после завершения проверки.
             `;
             
             // Check if we already posted this comment
@@ -42,7 +46,7 @@ jobs:
             });
             
             const existingComment = comments.find(comment => 
-              comment.body.includes('Meticulous Change Report')
+              comment.body.includes('Запуск Meticulous Change Report')
             );
             
             if (existingComment) {
@@ -61,4 +65,116 @@ jobs:
                 issue_number,
                 body: commentBody
               });
-            } 
+            }
+
+  run-meticulous:
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/run-meticulous')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acknowledge comment
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            
+            await github.rest.reactions.createForIssueComment({
+              owner,
+              repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+            
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: '🚀 Запускаю Meticulous Change Report для этого PR. Результаты будут доступны здесь после завершения.'
+            });
+
+      - name: Get PR branch information
+        id: pr_info
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issue_number
+            });
+            
+            return {
+              ref: pr.head.ref,
+              sha: pr.head.sha
+            };
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr_info.outputs.result.ref }}
+
+      - name: Setup Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      - name: Install Angular CLI
+        run: |
+          npm install -g @angular/cli
+
+      - name: Build project
+        run: |
+          ng build
+
+      - name: Start project
+        run: |
+          ng serve --port 4200 &
+          sleep 5
+
+      - name: Run Meticulous tests
+        id: meticulous
+        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
+        with:
+          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
+          app-url: "http://localhost:4200/"
+
+      - name: Post results to PR
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            
+            let resultsMessage = '';
+            if ('${{ steps.meticulous.outcome }}' === 'success') {
+              resultsMessage = `✅ Проверка Meticulous успешно завершена!\n\nРезультаты доступны здесь: ${{ steps.meticulous.outputs.report-url || 'URL не доступен' }}`;
+            } else {
+              resultsMessage = `❌ Проверка Meticulous завершилась с ошибкой.\n\nПожалуйста, проверьте логи workflow для дополнительной информации.`;
+            }
+            
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: resultsMessage
+            }); 
