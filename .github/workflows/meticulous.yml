@@ -90,7 +90,7 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.inputs.branch || github.ref }}
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Setup Node.js LTS
         uses: actions/setup-node@v4
