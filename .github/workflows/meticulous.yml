@@ -15,6 +15,11 @@ on:
   # so Meticulous can run the workflow on the base commit for comparison
   # if an existing workflow hasn't run yet
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run tests on'
+        required: false
+        type: string
   issue_comment:
     types: [created]
 
@@ -73,7 +78,8 @@ jobs:
         with:
           workflow: meticulous.yml
           token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ steps.pr-info.outputs.branch }}
+          ref: ${{ fromJson(steps.pr-info.outputs.result).branch }}
+          inputs: '{"branch": "${{ fromJson(steps.pr-info.outputs.result).branch }}"}'
 
   test:
     name: Change Report
