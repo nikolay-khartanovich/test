@@ -1,6 +1,10 @@
-name: "Meticulous Test"
+# Файл удален, так как весь функционал перемещен в add-meticulous-button.yml
+
+name: "Meticulous Tests"
 
 on:
+  pull_request_target:
+    types: [opened, reopened]
   issue_comment:
     types: [created]
 
@@ -12,9 +16,41 @@ permissions:
   statuses: write
 
 jobs:
+  # Добавляет комментарий с инструкциями при создании PR
+  add-initial-comment:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add information comment
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            
+            const body = `## Meticulous тесты
+            
+            Для запуска Meticulous тестов на этом PR, добавьте комментарий с текстом:
+            
+            \`\`\`
+            /meticulous
+            \`\`\`
+            
+            Другие доступные команды:
+            \`/help\` или \`/помощь\` - показать справку
+            `;
+            
+            await github.rest.issues.createComment({
+              issue_number,
+              owner,
+              repo,
+              body
+            });
+
+  # Запускает Meticulous тесты при комментарии /meticulous
   run-meticulous:
-    name: Run Meticulous Test
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/meticulous')
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/meticulous')
     runs-on: ubuntu-latest
     steps:
       - name: Add rocket reaction to comment
@@ -106,10 +142,6 @@ jobs:
             const { owner, repo } = context.repo;
             const success = '${{ job.status }}' === 'success';
             const reportUrl = '${{ steps.meticulous.outputs.report-url }}' || '';
-            const issue_number = context.issue.number;
-            
-            // Create URL that will pre-fill comment with /meticulous command for rerun
-            const rerunUrl = `https://github.com/${owner}/${repo}/pull/${issue_number}?comment=%2Fmeticulous`;
             
             let body = `## Результат проверки Meticulous\n\n`;
             body += success ? '✅ Проверка успешно завершена!' : '❌ Проверка завершилась с ошибкой';
@@ -120,12 +152,7 @@ jobs:
             
             body += `\n\n[Подробности запуска](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
             
-            // Add rerun button
-            body += `\n\n<p align="center">
-              <a href="${rerunUrl}">
-                <img src="https://img.shields.io/badge/ЗАПУСТИТЬ-ЗАНОВО-FF5733?style=for-the-badge" alt="Запустить заново" width="300" />
-              </a>
-            </p>`;
+            body += `\n\nДля повторного запуска тестов используйте команду \`/meticulous\``;
             
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -134,9 +161,9 @@ jobs:
               body
             });
 
+  # Показывает справку при комментарии /help или /помощь
   add-help-comment:
-    name: Add Help Comment
-    if: github.event.issue.pull_request && (contains(github.event.comment.body, '/help') || contains(github.event.comment.body, '/помощь'))
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && (contains(github.event.comment.body, '/help') || contains(github.event.comment.body, '/помощь'))
     runs-on: ubuntu-latest
     steps:
       - name: Add help comment
@@ -145,10 +172,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            
-            // Create URL that will pre-fill comment with /meticulous command
-            const runUrl = `https://github.com/${owner}/${repo}/pull/${issue_number}?comment=%2Fmeticulous`;
             
             const body = `## Команды Meticulous
             
@@ -156,16 +179,10 @@ jobs:
             
             - \`/meticulous\` - Запустить проверку Meticulous
             - \`/help\` или \`/помощь\` - Показать эту справку
-            
-            <p align="center">
-              <a href="${runUrl}">
-                <img src="https://img.shields.io/badge/ЗАПУСТИТЬ-ТЕСТЫ-44CC11?style=for-the-badge" alt="Запустить тесты" width="300" />
-              </a>
-            </p>
             `;
             
             await github.rest.issues.createComment({
-              issue_number,
+              issue_number: context.issue.number,
               owner,
               repo,
               body
@@ -176,4 +193,4 @@ jobs:
               repo,
               comment_id: context.payload.comment.id,
               content: 'eyes'
-            }); 
+            });
