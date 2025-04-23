@@ -6,6 +6,11 @@ name: Meticulous
 on:
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR номер'
+        required: true
 
 # Important: The workflow needs all permissions listed below.
 # These permissions are mainly needed to publish and update check status and
@@ -37,6 +42,21 @@ jobs:
               content: 'rocket'
             });
 
+      - name: Trigger Meticulous Test Run
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: meticulous.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          inputs: |
+            {
+              "pr_number": "${{ github.event.issue.number }}"
+            }
+
+  # Основной job для запуска тестов Meticulous
+  test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
       - name: Clone repository
         uses: actions/checkout@v4
 
