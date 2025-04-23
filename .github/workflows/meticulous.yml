@@ -77,10 +77,7 @@ jobs:
           workflow: meticulous.yml
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ steps.pr-info.outputs.branch }}
-          inputs: |
-            {
-              "branch": "${{ steps.pr-info.outputs.branch }}"
-            }
+          inputs: '{"branch":"${{ steps.pr-info.outputs.branch }}"}'
 
   test:
     name: Change Report
