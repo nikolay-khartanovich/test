@@ -14,14 +14,7 @@ on:
   # Important: We need the workflow to run on workflow_dispatch events
   # so Meticulous can run the workflow on the base commit for comparison
   # if an existing workflow hasn't run yet
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to run tests on'
-        required: false
-        type: string
-  issue_comment:
-    types: [created]
+  workflow_dispatch: {}
 
 # Important: The workflow needs all permissions listed below.
 # These permissions are mainly needed to publish and update check status and
@@ -34,56 +27,8 @@ permissions:
   statuses: read
 
 jobs:
-  # Запускает workflow через комментарий /meticulous в PR
-  trigger-from-comment:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/meticulous')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add rocket reaction to comment
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            
-            await github.rest.reactions.createForIssueComment({
-              owner,
-              repo,
-              comment_id: context.payload.comment.id,
-              content: 'rocket'
-            });
-
-      - name: Get PR info
-        uses: actions/github-script@v6
-        id: pr-info
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: issue_number
-            });
-            
-            console.log('PR branch:', pr.head.ref);
-            return {
-              branch: pr.head.ref
-            };
-
-      - name: Trigger Meticulous Test Run
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: meticulous.yml
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ fromJson(steps.pr-info.outputs.result).branch }}
-          inputs: '{"branch": "${{ fromJson(steps.pr-info.outputs.result).branch }}"}'
-
   test:
-    name: Change Report
-    if: github.event_name != 'issue_comment'
+    name: Run Meticulous tests
     runs-on: ubuntu-latest
 
     steps:
@@ -128,4 +73,5 @@ jobs:
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
           # Angular server URL on port 4200
-          app-url: "http://localhost:4200/"
+          app-url: "http://qa.app.efficentl.com"
+          base-url: "https://uat.app.efficentl.com"
