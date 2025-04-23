@@ -1,4 +1,4 @@
-# Workflow for local application launch and running Meticulous tests
+# Workflow for running Meticulous tests
 
 name: Meticulous
 
@@ -6,11 +6,6 @@ name: Meticulous
 on:
   issue_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'PR номер'
-        required: true
 
 # Important: The workflow needs all permissions listed below.
 # These permissions are mainly needed to publish and update check status and
@@ -23,38 +18,8 @@ permissions:
   statuses: read
 
 jobs:
-  # Запускает workflow через комментарий /meticulous в PR
-  trigger-from-comment:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/meticulous')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add rocket reaction to comment
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            
-            await github.rest.reactions.createForIssueComment({
-              owner,
-              repo,
-              comment_id: context.payload.comment.id,
-              content: 'rocket'
-            });
-
-      - name: Trigger Meticulous Test Run
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: meticulous.yml
-          token: ${{ secrets.GITHUB_TOKEN }}
-          inputs: |
-            {
-              "pr_number": "${{ github.event.issue.number }}"
-            }
-
-  # Основной job для запуска тестов Meticulous
   test:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/meticulous')
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository
@@ -95,5 +60,30 @@ jobs:
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Angular server URL on port 4200
           app-url: "http://localhost:4200/"
+
+      - name: Add result comment
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.inputs.pr_number;
+            
+            let body = '## Meticulous Test Results\n\n';
+            
+            if (context.job.status === 'success') {
+              body += '✅ Тесты успешно завершены. Результаты будут доступны в Checks tab.\n';
+              body += 'Для просмотра результатов перейдите в Checks tab и нажмите на "Meticulous Test Results".';
+            } else {
+              body += '❌ Произошла ошибка при выполнении тестов.\n';
+              body += 'Пожалуйста, проверьте логи для деталей.';
+            }
+            
+            await github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner,
+              repo,
+              body
+            });
