@@ -16,8 +16,8 @@ on:
   # if an existing workflow hasn't run yet
   workflow_dispatch:
     inputs:
-      pr_number:
-        description: 'PR номер'
+      branch:
+        description: 'Ветка для тестирования'
         required: true
   issue_comment:
     types: [created]
@@ -52,6 +52,25 @@ jobs:
               content: 'rocket'
             });
 
+      - name: Get PR info
+        uses: actions/github-script@v6
+        id: pr-info
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issue_number
+            });
+            
+            return {
+              branch: pr.head.ref
+            };
+
       - name: Trigger Meticulous Test Run
         uses: benc-uk/workflow-dispatch@v1
         with:
@@ -59,7 +78,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           inputs: |
             {
-              "pr_number": "${{ github.event.issue.number }}"
+              "branch": "${{ steps.pr-info.outputs.branch }}"
             }
 
   test:
@@ -70,6 +89,8 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Setup Node.js LTS
         uses: actions/setup-node@v4
