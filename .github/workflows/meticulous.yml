@@ -20,6 +20,11 @@ on:
         description: 'Branch to run tests on'
         required: false
         type: string
+      compare:
+        description: 'Run comparison or just baseline'
+        required: false
+        type: boolean
+        default: false
   issue_comment:
     types: [created]
 
@@ -79,10 +84,11 @@ jobs:
           workflow: meticulous.yml
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ fromJson(steps.pr-info.outputs.result).branch }}
-          inputs: '{"branch": "${{ fromJson(steps.pr-info.outputs.result).branch }}"}'
+          inputs: '{"branch": "${{ fromJson(steps.pr-info.outputs.result).branch }}", "compare": "true"}'
 
+  # Задача для создания базовых снимков или сравнения
   test:
-    name: Change Report
+    name: Meticulous Tests
     if: github.event_name != 'issue_comment'
     runs-on: ubuntu-latest
 
@@ -123,9 +129,19 @@ jobs:
           ng serve --port 4200 &
           sleep 5
 
-      - name: Run Meticulous tests
+      # Если это запуск из main ветки или открытие PR - только создаем базовые снимки
+      - name: Run Meticulous baseline (no compare)
+        if: github.ref == 'refs/heads/master' || (github.event_name == 'pull_request' && !github.event.inputs.compare)
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
           api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Angular server URL on port 4200
+          app-url: "http://localhost:4200/"
+          capture-only: "true"
+
+      # Если это специальный запуск из комментария - делаем сравнение
+      - name: Run Meticulous with comparison
+        if: github.event.inputs.compare == 'true'
+        uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
+        with:
+          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
           app-url: "http://localhost:4200/"
