@@ -71,6 +71,6 @@ jobs:
       - name: Run Meticulous visual tests
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
-          api-token: Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd
+          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
           app-url: "https://qa.app.efficiently.com/"
           base-url: "https://client10.app.efficiently.com/"
