@@ -27,47 +27,37 @@ permissions:
 
 jobs:
   test:
-    name: Change Report
+    name: Visual Regression Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Clone repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Node.js LTS
-        uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: npm
-
-      - name: Cache node_modules
-        uses: actions/cache@v4
+          fetch-depth: 0
+      - name: Install dependencie: pnpm
+        uses: pnpm/action-setup@v4
         with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}
+          version: 9
+      - name: Install dependencies: nvm
+        uses: nvm/action-setup@v4
+        with:
+          node-version: "18"
+      - name: Install dependencies: jq
+        run: apt-get install -y jq
 
-      - name: Install dependencies
+      - name: Start bootstrap
+        run: bash scripts/bootstrap.sh
+
+      - name: Start app
+        timeout-minutes: 15
         run: |
-          npm ci
+          cd packages/client/design-schedule
+          pnpm start
 
-      - name: Install Angular CLI
-        run: |
-          npm install -g @angular/cli
-
-      - name: Build project
-        run: |
-          ng build
-
-      - name: Start project
-        run: |
-          ng serve --port 4200 &
-          sleep 5
-
-      - name: Run Meticulous tests
+      - name: Run Meticulous visual tests
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
-          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Angular server URL on port 4200
-          app-url: "http://localhost:4200/"
+          api-token: caGBBzVk2lyEAbEMpEAGu6CG0H3J6hTpCY8R0jHu
+          app-url: "http://localhost:4401"
