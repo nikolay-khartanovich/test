@@ -10,7 +10,7 @@ on:
     branches:
       - master
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
   # Important: We need the workflow to run on workflow_dispatch events
   # so Meticulous can run the workflow on the base commit for comparison
   # if an existing workflow hasn't run yet
@@ -36,37 +36,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
-
-      - name: Setup Node.js LTS
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}
-
-      - name: Install dependencies
-        run: |
-          npm ci
-
-      - name: Install Angular CLI
-        run: |
-          npm install -g @angular/cli
-
-      - name: Build project
-        run: |
-          ng build
-
-      - name: Start project
-        run: |
-          ng serve --port 4200 &
-          sleep 5
 
       - name: Run Meticulous visual tests
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
