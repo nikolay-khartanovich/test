@@ -68,10 +68,9 @@ jobs:
           ng serve --port 4200 &
           sleep 5
 
-      - name: Run Meticulous tests
+      - name: Run Meticulous visual tests
         uses: alwaysmeticulous/report-diffs-action/cloud-compute@v1
         with:
-          api-token: ${{ secrets.METICULOUS_API_TOKEN }}
-          # Angular server URL on port 4200
-          app-url: "http://qa.app.efficiently.com"
-          base-url: "https://uat.app.efficiently.com"
+          api-token: caGBBzVk2lyEAbEMpEAGu6CG0H3J6hTpCY8R0jHu
+          app-url: "https://qa.app.efficiently.com/"
+          base-url: "https://${{ toLower(github.head_ref) }}.app.efficiently.com/"
