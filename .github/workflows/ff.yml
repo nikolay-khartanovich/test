@@ -19,8 +19,22 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            // If the event is unlabeled and it was the blocked label, set success status immediately
-            if (context.payload.action === 'unlabeled' && context.payload.label.name === 'blocked') {
+            // Get PR comments to check if label was manually removed
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            // Check if there was a manual label removal in the last minute
+            const oneMinuteAgo = new Date(Date.now() - 60000);
+            const recentManualRemoval = comments.some(comment => 
+              comment.user.login === context.actor && 
+              comment.body.includes('removed the blocked label') &&
+              new Date(comment.created_at) > oneMinuteAgo
+            );
+
+            if (recentManualRemoval) {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
