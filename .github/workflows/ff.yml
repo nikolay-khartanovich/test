@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   issues:
-    types: [unlabeled, labeled]
+    types: [labeled, unlabeled]
 
 permissions:
   issues: write
@@ -15,20 +15,19 @@ jobs:
   check-commits:
     runs-on: ubuntu-latest
     steps:
-      - name: Check number of commits
+      - name: Check number of commits and manage labels
         uses: actions/github-script@v6
         with:
           script: |
-            // Get the latest commit SHA from the PR
-            const { data: pr } = await github.rest.pulls.get({
+            const { data: commits } = await github.rest.pulls.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number
             });
-            
-            const latestSha = pr.head.sha;
 
-            // Check if blocked label exists
+            const MAX_COMMITS = 1;
+
+            // Check current labels
             const { data: labels } = await github.rest.issues.listLabelsOnIssue({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -38,82 +37,58 @@ jobs:
             const hasBlockedLabel = labels.some(label => label.name === 'blocked');
             const hasApprovedLabel = labels.some(label => label.name === 'approved');
 
-            // If the event is adding approved label, set success status
-            if (context.payload.action === 'labeled' && context.payload.label && context.payload.label.name === 'approved') {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: latestSha,
-                state: 'success',
-                context: 'commits-check',
-                description: 'Manually approved - commits check bypassed'
-              });
-              return;
-            }
-
-            // If removing blocked label, do nothing - wait for manual approved label
-            if (context.payload.action === 'unlabeled' && context.payload.label && context.payload.label.name === 'blocked') {
-              return;
-            }
-
-            const { data: commits } = await github.rest.pulls.listCommits({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number
-            });
-
-            const MAX_COMMITS = 1;
-
-            // If PR is approved, always set success status
-            if (hasApprovedLabel) {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: latestSha,
-                state: 'success',
-                context: 'commits-check',
-                description: 'Manually approved - commits check bypassed'
-              });
-              return;
-            }
-
-            if (commits.length > MAX_COMMITS && !hasBlockedLabel) {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                labels: ['blocked']
-              });
-
-              // Set check status as failed
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: latestSha,
-                state: 'failure',
-                context: 'commits-check',
-                description: `Too many commits (${commits.length} > ${MAX_COMMITS}). Please remove "blocked" label and add "approved" label to unblock the PR.`
-              });
-            } else if (commits.length <= MAX_COMMITS) {
-              // Remove blocked label if it was added previously
-              try {
-                await github.rest.issues.removeLabel({
+            if (commits.length > MAX_COMMITS) {
+              // If approved, don't add blocked label
+              if (!hasApprovedLabel && !hasBlockedLabel) {
+                await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
-                  name: 'blocked'
+                  labels: ['blocked']
                 });
-              } catch (error) {
-                // Ignore error if label doesn't exist
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `⚠️ This PR contains ${commits.length} commits, which exceeds the maximum allowed number (${MAX_COMMITS}). PR has been marked with 'blocked' label. To merge this PR, please add 'approved' label.`
+                });
               }
+            } else {
+              // Remove blocked label if commits count is within limits
+              if (hasBlockedLabel) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    name: 'blocked'
+                  });
+                } catch (error) {
+                  // Ignore error if label doesn't exist
+                }
+              }
+            }
 
-              // Set check status as success
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: latestSha,
-                state: 'success',
-                context: 'commits-check',
-                description: `Commits count is within limits (${commits.length} <= ${MAX_COMMITS})`
-              });
+  merge-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if merge is allowed
+        uses: actions/github-script@v6
+        with:
+          script: |
+            // Check current labels
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const hasBlockedLabel = labels.some(label => label.name === 'blocked');
+            const hasApprovedLabel = labels.some(label => label.name === 'approved');
+
+            if (hasBlockedLabel && !hasApprovedLabel) {
+              core.setFailed('PR is blocked. Please add "approved" label to allow merge.');
+            } else {
+              console.log('PR is ready for merge.');
             }
