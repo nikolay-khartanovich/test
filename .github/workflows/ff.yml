@@ -19,26 +19,21 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            // Get PR comments to check if label was manually removed
-            const { data: comments } = await github.rest.issues.listComments({
+            // Get the latest commit SHA from the PR
+            const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number
+              pull_number: context.issue.number
             });
+            
+            const latestSha = pr.head.sha;
 
-            // Check if there was a manual label removal in the last minute
-            const oneMinuteAgo = new Date(Date.now() - 60000);
-            const recentManualRemoval = comments.some(comment => 
-              comment.user.login === context.actor && 
-              comment.body.includes('removed the blocked label') &&
-              new Date(comment.created_at) > oneMinuteAgo
-            );
-
-            if (recentManualRemoval) {
+            // If the event is unlabeled and it was the blocked label, set success status immediately
+            if (context.payload.action === 'unlabeled' && context.payload.label && context.payload.label.name === 'blocked') {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                sha: context.sha,
+                sha: latestSha,
                 state: 'success',
                 context: 'commits-check',
                 description: 'Manually approved by removing blocked label'
@@ -75,7 +70,7 @@ jobs:
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                sha: context.sha,
+                sha: latestSha,
                 state: 'failure',
                 context: 'commits-check',
                 description: `Too many commits (${commits.length} > ${MAX_COMMITS}). Please remove "blocked" label to unblock the PR.`
@@ -97,7 +92,7 @@ jobs:
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                sha: context.sha,
+                sha: latestSha,
                 state: 'success',
                 context: 'commits-check',
                 description: `Commits count is within limits (${commits.length} <= ${MAX_COMMITS}) or manually approved`
