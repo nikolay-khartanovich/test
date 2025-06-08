@@ -19,6 +19,19 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            // If the event is unlabeled and it was the blocked label, set success status immediately
+            if (context.payload.action === 'unlabeled' && context.payload.label.name === 'blocked') {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: 'success',
+                context: 'commits-check',
+                description: 'Manually approved by removing blocked label'
+              });
+              return;
+            }
+
             const { data: commits } = await github.rest.pulls.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -35,24 +48,6 @@ jobs:
             });
 
             const hasBlockedLabel = labels.some(label => label.name === 'blocked');
-
-            // If the event is unlabeled and it was the blocked label, set success status
-            if (context.payload.action === 'unlabeled' && context.payload.label.name === 'blocked') {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: context.sha,
-                state: 'success',
-                context: 'commits-check',
-                description: 'Manually approved by removing blocked label'
-              });
-              return;
-            }
-
-            // Skip adding blocked label if it was manually removed
-            if (context.payload.action === 'unlabeled' && context.payload.label.name === 'blocked') {
-              return;
-            }
 
             if (commits.length > MAX_COMMITS && !hasBlockedLabel) {
               await github.rest.issues.addLabels({
