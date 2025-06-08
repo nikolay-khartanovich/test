@@ -19,10 +19,45 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            // Determine if this is a pull request or issue event
+            let pullNumber;
+            let issueNumber;
+            
+            if (context.eventName === 'pull_request') {
+              pullNumber = context.issue.number;
+              issueNumber = context.issue.number;
+            } else if (context.eventName === 'issues') {
+              // For issues events, we need to find associated PR
+              const { data: prs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open'
+              });
+              
+              const associatedPR = prs.find(pr => pr.number === context.issue.number);
+              if (!associatedPR) {
+                console.log('No associated pull request found');
+                return;
+              }
+              
+              pullNumber = context.issue.number;
+              issueNumber = context.issue.number;
+            } else {
+              console.log('Unsupported event type');
+              return;
+            }
+
+            // Only process if this is actually a pull request
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber
+            });
+
             const { data: commits } = await github.rest.pulls.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number
+              pull_number: pullNumber
             });
 
             const MAX_COMMITS = 1;
@@ -31,19 +66,23 @@ jobs:
             const { data: labels } = await github.rest.issues.listLabelsOnIssue({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number
+              issue_number: issueNumber
             });
 
             const hasBlockedLabel = labels.some(label => label.name === 'blocked');
             const hasApprovedLabel = labels.some(label => label.name === 'approved');
 
+            console.log(`Commits count: ${commits.length}, Max allowed: ${MAX_COMMITS}`);
+            console.log(`Has blocked label: ${hasBlockedLabel}, Has approved label: ${hasApprovedLabel}`);
+
             if (commits.length > MAX_COMMITS) {
               // If approved, don't add blocked label
               if (!hasApprovedLabel && !hasBlockedLabel) {
+                console.log('Adding blocked label');
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: context.issue.number,
+                  issue_number: issueNumber,
                   labels: ['blocked']
                 });
               }
@@ -51,14 +90,15 @@ jobs:
               // Remove blocked label if commits count is within limits
               if (hasBlockedLabel) {
                 try {
+                  console.log('Removing blocked label');
                   await github.rest.issues.removeLabel({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    issue_number: context.issue.number,
+                    issue_number: issueNumber,
                     name: 'blocked'
                   });
                 } catch (error) {
-                  // Ignore error if label doesn't exist
+                  console.log('Error removing blocked label:', error.message);
                 }
               }
             }
