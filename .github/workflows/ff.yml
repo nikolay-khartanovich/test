@@ -49,6 +49,11 @@ jobs:
               return;
             }
 
+            // Skip adding blocked label if it was manually removed
+            if (context.payload.action === 'unlabeled' && context.payload.label.name === 'blocked') {
+              return;
+            }
+
             if (commits.length > MAX_COMMITS && !hasBlockedLabel) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
