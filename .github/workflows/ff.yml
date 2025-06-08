@@ -38,24 +38,21 @@ jobs:
             const hasBlockedLabel = labels.some(label => label.name === 'blocked');
             const hasApprovedLabel = labels.some(label => label.name === 'approved');
 
-            // If the event is unlabeled and it was the blocked label, add approved label and set success status
-            if (context.payload.action === 'unlabeled' && context.payload.label && context.payload.label.name === 'blocked') {
-              // Add approved label to prevent future blocking
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                labels: ['approved']
-              });
-
+            // If the event is adding approved label, set success status
+            if (context.payload.action === 'labeled' && context.payload.label && context.payload.label.name === 'approved') {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 sha: latestSha,
                 state: 'success',
                 context: 'commits-check',
-                description: 'Manually approved by removing blocked label'
+                description: 'Manually approved - commits check bypassed'
               });
+              return;
+            }
+
+            // If removing blocked label, do nothing - wait for manual approved label
+            if (context.payload.action === 'unlabeled' && context.payload.label && context.payload.label.name === 'blocked') {
               return;
             }
 
@@ -95,7 +92,7 @@ jobs:
                 sha: latestSha,
                 state: 'failure',
                 context: 'commits-check',
-                description: `Too many commits (${commits.length} > ${MAX_COMMITS}). Please remove "blocked" label to unblock the PR.`
+                description: `Too many commits (${commits.length} > ${MAX_COMMITS}). Please remove "blocked" label and add "approved" label to unblock the PR.`
               });
             } else if (commits.length <= MAX_COMMITS) {
               // Remove blocked label if it was added previously
