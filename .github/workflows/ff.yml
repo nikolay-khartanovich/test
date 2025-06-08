@@ -1,149 +1,22 @@
-name: PR Commits Blocker
-
+name: Block PR
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-  pull_request_target:
-    types: [labeled, unlabeled]
-  issues:
-    types: [labeled, unlabeled]
-
-permissions:
-  issues: write
-  pull-requests: write
-  statuses: write
-
 jobs:
-  check-commits:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - name: Check number of commits and manage labels
-        uses: actions/github-script@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/github-script@v7
         with:
           script: |
-            // Determine if this is a pull request or issue event
-            let pullNumber;
-            let issueNumber;
-            
-            if (context.eventName === 'pull_request' || context.eventName === 'pull_request_target') {
-              pullNumber = context.issue.number;
-              issueNumber = context.issue.number;
-            } else if (context.eventName === 'issues') {
-              // For issues events, we need to find associated PR
-              const { data: prs } = await github.rest.pulls.list({
+            const count = await exec.exec('git', ['rev-list', '--count', `origin/${{ github.base_ref }}..${{ github.head_ref }}`], {silent: true});
+            if (count > 10) {
+              await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                state: 'open'
-              });
-              
-              const associatedPR = prs.find(pr => pr.number === context.issue.number);
-              if (!associatedPR) {
-                console.log('No associated pull request found');
-                return;
-              }
-              
-              pullNumber = context.issue.number;
-              issueNumber = context.issue.number;
-            } else {
-              console.log('Unsupported event type');
-              return;
-            }
-
-            // Only process if this is actually a pull request
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pullNumber
-            });
-
-            const { data: commits } = await github.rest.pulls.listCommits({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pullNumber
-            });
-
-            const MAX_COMMITS = 1;
-
-            // Check current labels
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber
-            });
-
-            const hasBlockedLabel = labels.some(label => label.name === 'blocked');
-            const hasApprovedLabel = labels.some(label => label.name === 'approved');
-
-            console.log(`Commits count: ${commits.length}, Max allowed: ${MAX_COMMITS}`);
-            console.log(`Has blocked label: ${hasBlockedLabel}, Has approved label: ${hasApprovedLabel}`);
-            console.log(`Event: ${context.eventName}, Action: ${context.payload.action}`);
-
-            // Check if blocked label was manually removed
-            const wasBlockedLabelRemoved = context.eventName === 'pull_request_target' && 
-                                         context.payload.action === 'unlabeled' &&
-                                         context.payload.label?.name === 'blocked';
-
-            if (commits.length > MAX_COMMITS) {
-              // If approved or blocked label was manually removed, allow merge
-              if (hasApprovedLabel || wasBlockedLabelRemoved) {
-                const reason = hasApprovedLabel ? 'approved' : 'manually unblocked';
-                console.log(`PR is ${reason}, allowing merge despite multiple commits`);
-                await github.rest.repos.createCommitStatus({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: pr.head.sha,
-                  state: 'success',
-                  context: 'PR Commits Blocker',
-                  description: `${reason.charAt(0).toUpperCase() + reason.slice(1)} PR with ${commits.length} commits`
-                });
-              } else {
-                // Block the PR
-                console.log('Blocking PR due to multiple commits');
-                if (!hasBlockedLabel) {
-                  await github.rest.issues.addLabels({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: issueNumber,
-                    labels: ['blocked']
-                  });
-                }
-                
-                // Set status to failure
-                await github.rest.repos.createCommitStatus({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: pr.head.sha,
-                  state: 'failure',
-                  context: 'PR Commits Blocker',
-                  description: `Too many commits: ${commits.length}/${MAX_COMMITS}. Squash commits or add 'approved' label.`
-                });
-                
-                // Fail the workflow
-                core.setFailed(`PR blocked: ${commits.length} commits exceed limit of ${MAX_COMMITS}`);
-              }
-            } else {
-              // Remove blocked label if commits count is within limits
-              if (hasBlockedLabel) {
-                try {
-                  console.log('Removing blocked label');
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: issueNumber,
-                    name: 'blocked'
-                  });
-                } catch (error) {
-                  console.log('Error removing blocked label:', error.message);
-                }
-              }
-              
-              // Set status to success
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: pr.head.sha,
-                state: 'success',
-                context: 'PR Commits Blocker',
-                description: `Valid commit count: ${commits.length}/${MAX_COMMITS}`
+                issue_number: context.issue.number,
+                labels: ['blocked']
               });
             }
