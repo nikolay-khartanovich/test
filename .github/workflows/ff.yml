@@ -16,7 +16,6 @@ jobs:
             const pr = context.payload.pull_request;
             if (!pr) return;
             
-            // Если это событие изменения лейбла - проверяем только лейблы
             if (context.eventName === 'pull_request' && (context.payload.action === 'labeled' || context.payload.action === 'unlabeled')) {
               const labels = (pr.labels || []).map(l => l.name);
               if (labels.includes('blocked')) {
@@ -25,7 +24,6 @@ jobs:
               return;
             }
             
-            // Для других событий проверяем коммиты
             const count = pr.commits || 0;
             if (count > 10) {
               await github.rest.issues.addLabels({
