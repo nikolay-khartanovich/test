@@ -46,13 +46,6 @@ jobs:
                   issue_number: context.issue.number,
                   labels: ['blocked']
                 });
-                
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body: `⚠️ This PR contains ${commits.length} commits, which exceeds the maximum allowed number (${MAX_COMMITS}). PR has been marked with 'blocked' label. To merge this PR, please add 'approved' label.`
-                });
               }
             } else {
               // Remove blocked label if commits count is within limits
@@ -68,27 +61,4 @@ jobs:
                   // Ignore error if label doesn't exist
                 }
               }
-            }
-
-  merge-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check if merge is allowed
-        uses: actions/github-script@v6
-        with:
-          script: |
-            // Check current labels
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-
-            const hasBlockedLabel = labels.some(label => label.name === 'blocked');
-            const hasApprovedLabel = labels.some(label => label.name === 'approved');
-
-            if (hasBlockedLabel && !hasApprovedLabel) {
-              core.setFailed('PR is blocked. Please add "approved" label to allow merge.');
-            } else {
-              console.log('PR is ready for merge.');
             }
