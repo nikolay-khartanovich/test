@@ -3,6 +3,8 @@ name: PR Commits Blocker
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [labeled, unlabeled]
   issues:
     types: [labeled, unlabeled]
 
@@ -23,7 +25,7 @@ jobs:
             let pullNumber;
             let issueNumber;
             
-            if (context.eventName === 'pull_request') {
+            if (context.eventName === 'pull_request' || context.eventName === 'pull_request_target') {
               pullNumber = context.issue.number;
               issueNumber = context.issue.number;
             } else if (context.eventName === 'issues') {
@@ -76,15 +78,41 @@ jobs:
             console.log(`Has blocked label: ${hasBlockedLabel}, Has approved label: ${hasApprovedLabel}`);
 
             if (commits.length > MAX_COMMITS) {
-              // If approved, don't add blocked label
-              if (!hasApprovedLabel && !hasBlockedLabel) {
-                console.log('Adding blocked label');
-                await github.rest.issues.addLabels({
+              // If approved, allow merge
+              if (hasApprovedLabel) {
+                console.log('PR is approved, allowing merge despite multiple commits');
+                await github.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: issueNumber,
-                  labels: ['blocked']
+                  sha: pr.head.sha,
+                  state: 'success',
+                  context: 'PR Commits Blocker',
+                  description: `Approved PR with ${commits.length} commits`
                 });
+              } else {
+                // Block the PR
+                console.log('Blocking PR due to multiple commits');
+                if (!hasBlockedLabel) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    labels: ['blocked']
+                  });
+                }
+                
+                // Set status to failure
+                await github.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: pr.head.sha,
+                  state: 'failure',
+                  context: 'PR Commits Blocker',
+                  description: `Too many commits: ${commits.length}/${MAX_COMMITS}. Squash commits or add 'approved' label.`
+                });
+                
+                // Fail the workflow
+                core.setFailed(`PR blocked: ${commits.length} commits exceed limit of ${MAX_COMMITS}`);
               }
             } else {
               // Remove blocked label if commits count is within limits
@@ -101,4 +129,14 @@ jobs:
                   console.log('Error removing blocked label:', error.message);
                 }
               }
+              
+              // Set status to success
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: pr.head.sha,
+                state: 'success',
+                context: 'PR Commits Blocker',
+                description: `Valid commit count: ${commits.length}/${MAX_COMMITS}`
+              });
             }
