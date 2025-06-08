@@ -57,13 +57,6 @@ jobs:
                 labels: ['blocked']
               });
 
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `⚠️ This PR contains ${commits.length} commits, which exceeds the maximum allowed number (${MAX_COMMITS}). PR has been blocked with the 'blocked' label. Please reduce the number of commits or squash them.`
-              });
-
               // Set check status as failed
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
@@ -71,7 +64,7 @@ jobs:
                 sha: context.sha,
                 state: 'failure',
                 context: 'commits-check',
-                description: `Too many commits (${commits.length} > ${MAX_COMMITS})`
+                description: `Too many commits (${commits.length} > ${MAX_COMMITS}). Please remove "blocked" label to unblock the PR.`
               });
             } else if (commits.length <= MAX_COMMITS || hasBlockedLabel) {
               // Remove blocked label if it was added previously
