@@ -28,8 +28,26 @@ jobs:
             
             const latestSha = pr.head.sha;
 
-            // If the event is unlabeled and it was the blocked label, set success status immediately
+            // Check if blocked label exists
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const hasBlockedLabel = labels.some(label => label.name === 'blocked');
+            const hasApprovedLabel = labels.some(label => label.name === 'approved');
+
+            // If the event is unlabeled and it was the blocked label, add approved label and set success status
             if (context.payload.action === 'unlabeled' && context.payload.label && context.payload.label.name === 'blocked') {
+              // Add approved label to prevent future blocking
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['approved']
+              });
+
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -49,14 +67,18 @@ jobs:
 
             const MAX_COMMITS = 1;
 
-            // Check if blocked label exists
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-
-            const hasBlockedLabel = labels.some(label => label.name === 'blocked');
+            // If PR is approved, always set success status
+            if (hasApprovedLabel) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: latestSha,
+                state: 'success',
+                context: 'commits-check',
+                description: 'Manually approved - commits check bypassed'
+              });
+              return;
+            }
 
             if (commits.length > MAX_COMMITS && !hasBlockedLabel) {
               await github.rest.issues.addLabels({
@@ -75,7 +97,7 @@ jobs:
                 context: 'commits-check',
                 description: `Too many commits (${commits.length} > ${MAX_COMMITS}). Please remove "blocked" label to unblock the PR.`
               });
-            } else if (commits.length <= MAX_COMMITS || hasBlockedLabel) {
+            } else if (commits.length <= MAX_COMMITS) {
               // Remove blocked label if it was added previously
               try {
                 await github.rest.issues.removeLabel({
@@ -95,6 +117,6 @@ jobs:
                 sha: latestSha,
                 state: 'success',
                 context: 'commits-check',
-                description: `Commits count is within limits (${commits.length} <= ${MAX_COMMITS}) or manually approved`
+                description: `Commits count is within limits (${commits.length} <= ${MAX_COMMITS})`
               });
             }
