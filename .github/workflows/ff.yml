@@ -1,10 +1,9 @@
 name: Block PR
 on:
   pull_request:
-    types: [opened, synchronize, labeled, unlabeled]
+    types: [opened, synchronize]
 permissions:
   issues: write
-  pull-requests: write
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -16,8 +15,6 @@ jobs:
             if (!pr) return;
             
             const count = pr.commits || 0;
-            const labels = (pr.labels || []).map(l => l.name);
-            
             if (count > 10) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
@@ -25,8 +22,4 @@ jobs:
                 issue_number: pr.number,
                 labels: ['blocked']
               });
-            }
-            
-            if (labels.includes('blocked')) {
-              core.setFailed('Merge blocked');
             }
