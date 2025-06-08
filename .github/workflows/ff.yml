@@ -1,6 +1,7 @@
 name: Block PR
 on:
   pull_request:
+    types: [opened, synchronize, labeled, unlabeled]
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -19,4 +20,8 @@ jobs:
                 issue_number: context.issue.number,
                 labels: ['blocked']
               });
+            }
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            if (labels.includes('blocked')) {
+              core.setFailed('Merge blocked by label');
             }
