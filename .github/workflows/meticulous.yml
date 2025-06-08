@@ -32,6 +32,7 @@ permissions:
   issues: write
   pull-requests: write
   statuses: read
+  labels: write
 
 jobs:
   # Запускает workflow через комментарий /meticulous в PR
