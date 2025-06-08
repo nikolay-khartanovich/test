@@ -1,0 +1,80 @@
+name: PR Commits Blocker
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issues:
+    types: [unlabeled]
+
+jobs:
+  check-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check number of commits
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            const MAX_COMMITS = 1;
+
+            // Check if blocked label exists
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const hasBlockedLabel = labels.some(label => label.name === 'blocked');
+
+            if (commits.length > MAX_COMMITS && !hasBlockedLabel) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['blocked']
+              });
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `⚠️ This PR contains ${commits.length} commits, which exceeds the maximum allowed number (${MAX_COMMITS}). PR has been blocked with the 'blocked' label. Please reduce the number of commits or squash them.`
+              });
+
+              // Set check status as failed
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: 'failure',
+                context: 'commits-check',
+                description: `Too many commits (${commits.length} > ${MAX_COMMITS})`
+              });
+            } else if (commits.length <= MAX_COMMITS || hasBlockedLabel) {
+              // Remove blocked label if it was added previously
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: 'blocked'
+                });
+              } catch (error) {
+                // Ignore error if label doesn't exist
+              }
+
+              // Set check status as success
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: 'success',
+                context: 'commits-check',
+                description: `Commits count is within limits (${commits.length} <= ${MAX_COMMITS}) or manually approved`
+              });
+            }
