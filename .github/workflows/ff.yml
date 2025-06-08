@@ -76,18 +76,25 @@ jobs:
 
             console.log(`Commits count: ${commits.length}, Max allowed: ${MAX_COMMITS}`);
             console.log(`Has blocked label: ${hasBlockedLabel}, Has approved label: ${hasApprovedLabel}`);
+            console.log(`Event: ${context.eventName}, Action: ${context.payload.action}`);
+
+            // Check if blocked label was manually removed
+            const wasBlockedLabelRemoved = context.eventName === 'pull_request_target' && 
+                                         context.payload.action === 'unlabeled' &&
+                                         context.payload.label?.name === 'blocked';
 
             if (commits.length > MAX_COMMITS) {
-              // If approved, allow merge
-              if (hasApprovedLabel) {
-                console.log('PR is approved, allowing merge despite multiple commits');
+              // If approved or blocked label was manually removed, allow merge
+              if (hasApprovedLabel || wasBlockedLabelRemoved) {
+                const reason = hasApprovedLabel ? 'approved' : 'manually unblocked';
+                console.log(`PR is ${reason}, allowing merge despite multiple commits`);
                 await github.rest.repos.createCommitStatus({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   sha: pr.head.sha,
                   state: 'success',
                   context: 'PR Commits Blocker',
-                  description: `Approved PR with ${commits.length} commits`
+                  description: `${reason.charAt(0).toUpperCase() + reason.slice(1)} PR with ${commits.length} commits`
                 });
               } else {
                 // Block the PR
