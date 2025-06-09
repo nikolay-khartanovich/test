@@ -1,4 +1,4 @@
-name: Block PR
+name: Merge Safety Commit Check
 on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
@@ -15,7 +15,6 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             if (!pr) return;
-            
             if (context.eventName === 'pull_request' && (context.payload.action === 'labeled' || context.payload.action === 'unlabeled')) {
               const labels = (pr.labels || []).map(l => l.name);
               if (labels.includes('blocked')) {
@@ -23,14 +22,39 @@ jobs:
               }
               return;
             }
-            
+
+            let maxCommits = 5;
+            try {
+              const repoProperties = await github.request('GET /repos/{owner}/{repo}/properties/values', {
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+
+              if (repoProperties.data && Array.isArray(repoProperties.data.properties)) {
+                const maxCommitsProperty = repoProperties.data.properties.find(p => p.property_name === 'commits_block_threshold');
+                if (maxCommitsProperty && maxCommitsProperty.value) {
+                  maxCommits = parseInt(maxCommitsProperty.value);
+                }
+              }
+            } catch (error) {
+              console.log('Failed to get repository properties, using default value:', error.message);
+            }
+
             const count = pr.commits || 0;
-            if (count > 10) {
+            if (count > maxCommits) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
                 labels: ['blocked']
               });
-              core.setFailed('Too many commits');
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `PR blocked: exceeds the limit of commits (${count} > ${maxCommits}).\n\nThis is done to prevent accidental merging of large changes that could affect main releases. To unblock the PR, please remove the 'blocked' label after manual review.`
+              });
+
+              core.setFailed('Too many commits. To remove the block, please remove the blocked label');
             }
