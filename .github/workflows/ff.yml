@@ -6,55 +6,48 @@ permissions:
   issues: write
   pull-requests: write
   contents: read
+  organization: read
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/github-script@v7
         with:
           script: |
             const pr = context.payload.pull_request;
             if (!pr) return;
+
             if (context.eventName === 'pull_request' && (context.payload.action === 'labeled' || context.payload.action === 'unlabeled')) {
               const labels = (pr.labels || []).map(l => l.name);
               if (labels.includes('blocked')) {
-                core.setFailed('PR blocked by label');
+                core.setFailed('PR blocked by Merge Safety Commit Check');
               }
               return;
             }
 
-            let maxCommits = 5;
-            try {
-              const repoProperties = await github.request('GET /repos/{owner}/{repo}/properties/values', {
-                owner: context.repo.owner,
-                repo: context.repo.repo
-              });
-
-              if (repoProperties.data && Array.isArray(repoProperties.data.properties)) {
-                const maxCommitsProperty = repoProperties.data.properties.find(p => p.property_name === 'commits_block_threshold');
-                if (maxCommitsProperty && maxCommitsProperty.value) {
-                  maxCommits = parseInt(maxCommitsProperty.value);
-                }
+            const properties = await github.request('GET /orgs/{org}/properties/values', {
+              org: context.repo.owner,
+              headers: {
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'Authorization': `Bearer ${process.env.GH_TOKEN}`
               }
-            } catch (error) {
-              console.log('Failed to get repository properties, using default value:', error.message);
-            }
+            });
 
-            const count = pr.commits || 0;
-            if (count > maxCommits) {
+            const thresholdProperty = properties.data.find(p => p.property_name === 'commits_block_threshold');
+            const threshold = thresholdProperty ? parseInt(thresholdProperty.value) : 10;
+            const actualCommits = pr.commits || 0;
+
+            console.log('Commit threshold:', threshold);
+
+            if (actualCommits > threshold) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
                 labels: ['blocked']
               });
-
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body: `PR blocked: exceeds the limit of commits (${count} > ${maxCommits}).\n\nThis is done to prevent accidental merging of large changes that could affect main releases. To unblock the PR, please remove the 'blocked' label after manual review.`
-              });
-
-              core.setFailed('Too many commits. To remove the block, please remove the blocked label');
+              core.setFailed(`Too many commits: ${actualCommits} (threshold: ${threshold})`);
             }
