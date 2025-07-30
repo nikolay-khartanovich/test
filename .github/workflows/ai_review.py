@@ -15,17 +15,24 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
 def validate_api_keys():
-    """Проверяет наличие необходимых API ключей"""
-    if not GROQ_API_KEY:
-        print("Ошибка: GROQ_API_KEY не найден в переменных окружения")
-        return False
-    
-    if not GITHUB_TOKEN:
-        print("Ошибка: GITHUB_TOKEN не найден в переменных окружения")  
-        return False
+    """Проверяет наличие необходимых API ключей с обработкой ошибок"""
+    try:
+        groq_key = os.getenv('GROQ_API_KEY')
+        if not groq_key or groq_key.strip() == '':
+            print("Ошибка: GROQ_API_KEY не найден или пуст в переменных окружения")
+            return False
         
-    print("API ключи успешно загружены из переменных окружения")
-    return True
+        github_token = os.getenv('GITHUB_TOKEN')
+        if not github_token or github_token.strip() == '':
+            print("Ошибка: GITHUB_TOKEN не найден или пуст в переменных окружения")  
+            return False
+            
+        print("API ключи успешно загружены из переменных окружения")
+        return True
+        
+    except Exception as e:
+        print(f"Ошибка при проверке API ключей: {e}")
+        return False
 
 def run_cmd(cmd):
     """Выполняет только безопасные git команды с улучшенной обработкой ошибок"""
@@ -42,9 +49,11 @@ def run_cmd(cmd):
         return ""
     
     try:
+        # Безопасно разбиваем команду на аргументы
+        cmd_parts = cmd.strip().split()
+        
         result = subprocess.run(
-            cmd, 
-            shell=True, 
+            cmd_parts,  # Используем список вместо строки для безопасности
             capture_output=True, 
             text=True,
             timeout=30,  # Таймаут 30 секунд
@@ -52,8 +61,9 @@ def run_cmd(cmd):
         )
         
         if result.returncode != 0:
-            print(f"Предупреждение: команда '{cmd}' завершилась с кодом {result.returncode}")
-            print(f"Stderr: {result.stderr}")
+            print(f"Предупреждение: команда '{' '.join(cmd_parts)}' завершилась с кодом {result.returncode}")
+            if result.stderr:
+                print(f"Stderr: {result.stderr}")
             
         return result.stdout.strip()
         
@@ -65,22 +75,41 @@ def run_cmd(cmd):
         return ""
 
 def get_changes(base_branch=None):
-    """Получает изменения в Pull Request"""
+    """Получает изменения в Pull Request с полной валидацией"""
     if not base_branch:
         print("Ошибка: базовая ветка не указана")
         sys.exit(1)
     
-    print(f"Сравниваю с веткой: {base_branch}")
-    base_sha = f'origin/{base_branch}'
+    # Дополнительная валидация базовой ветки
+    if not isinstance(base_branch, str) or base_branch.strip() == '':
+        print(f"Ошибка: некорректная базовая ветка: {base_branch}")
+        sys.exit(1)
+        
+    # Проверка на потенциально опасные символы
+    dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '<', '>']
+    if any(char in base_branch for char in dangerous_chars):
+        print(f"Ошибка: базовая ветка содержит опасные символы: {base_branch}")
+        sys.exit(1)
     
-    diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
-    detailed_diff = run_cmd(f'git diff {base_sha}..HEAD')
+    base_branch = base_branch.strip()
+    print(f"Сравниваю с веткой: {base_branch}")
+    
+    try:
+        base_sha = f'origin/{base_branch}'
+        
+        diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
+        detailed_diff = run_cmd(f'git diff {base_sha}..HEAD')
+        commit_msg = run_cmd('git log -1 --pretty=format:"%s"')
 
-    return {
-        'files': diff,
-        'diff': detailed_diff[:10000],  # Увеличиваем лимит для diff
-        'commit_msg': run_cmd('git log -1 --pretty=format:"%s"')
-    }
+        return {
+            'files': diff,
+            'diff': detailed_diff[:10000],  # Увеличиваем лимит для diff
+            'commit_msg': commit_msg
+        }
+        
+    except Exception as e:
+        print(f"Ошибка получения изменений: {e}")
+        sys.exit(1)
 
 def create_analysis_prompt(changes):
     """Создает промпт для AI анализа"""
@@ -249,53 +278,66 @@ def post_comment(review):
         return False
 
 def main():
-    """Основная функция"""
-    print("AI Code Reviewer")
-    
-    # Проверяем API ключи в начале
-    if not validate_api_keys():
-        print("Не удалось загрузить API ключи")
-        sys.exit(1)
-    
-    # Базовая ветка обязательна для PR
-    if len(sys.argv) < 2:
-        print("Ошибка: не указана базовая ветка")
-        sys.exit(1)
+    """Основная функция с полной обработкой ошибок"""
+    try:
+        print("AI Code Reviewer")
         
-    base_branch = sys.argv[1]
-    print(f"Базовая ветка: {base_branch}")
-
-    # Получаем изменения
-    print("Анализирую изменения...")
-    changes = get_changes(base_branch)
-
-    if not changes['files']:
-        print("Нет изменений для анализа")
-        sys.exit(0)
-
-    # AI анализ
-    print("Запускаю AI анализ...")
-    result = analyze_with_ai(changes)
-
-    print("Результат анализа:")
-    print(result["review"])
-
-    if result["has_issues"]:
-        # Есть проблемы - публикуем комментарий и завершаемся с ошибкой
-        print("\nНайдены критичные проблемы в коде!")
+        # Проверяем API ключи в начале
+        if not validate_api_keys():
+            print("Не удалось загрузить API ключи")
+            sys.exit(1)
         
-        success = post_comment(result["review"])
-        if success:
-            print("Комментарий с проблемами успешно опубликован")
-        else:
-            print("Ошибка публикации комментария, но проблемы найдены")
+        # Базовая ветка обязательна для PR
+        if len(sys.argv) < 2:
+            print("Ошибка: не указана базовая ветка")
+            sys.exit(1)
             
-        sys.exit(1)  # Завершаемся с ошибкой
-    else:
-        # Проблем нет - завершаемся успешно без комментария
-        print("\nКод выглядит хорошо! Критичных проблем не найдено.")
-        print("Комментарий не требуется - изменения одобрены.")
-        sys.exit(0)  # Успешное завершение
+        base_branch = sys.argv[1]
+        print(f"Базовая ветка: {base_branch}")
+
+        # Получаем изменения
+        print("Анализирую изменения...")
+        changes = get_changes(base_branch)
+
+        if not changes['files']:
+            print("Нет изменений для анализа")
+            sys.exit(0)
+
+        # AI анализ
+        print("Запускаю AI анализ...")
+        result = analyze_with_ai(changes)
+
+        print("Результат анализа:")
+        print(result["review"])
+
+        if result["has_issues"]:
+            # Есть проблемы - публикуем комментарий и завершаемся с ошибкой
+            print("\nНайдены критичные проблемы в коде!")
+            
+            success = post_comment(result["review"])
+            if success:
+                print("Комментарий с проблемами успешно опубликован")
+            else:
+                print("Ошибка публикации комментария, но проблемы найдены")
+                
+            sys.exit(1)  # Завершаемся с ошибкой
+        else:
+            # Проблем нет - завершаемся успешно без комментария
+            print("\nКод выглядит хорошо! Критичных проблем не найдено.")
+            print("Комментарий не требуется - изменения одобрены.")
+            sys.exit(0)  # Успешное завершение
+            
+    except KeyboardInterrupt:
+        print("\nПрерывание выполнения пользователем")
+        sys.exit(1)
+    except SystemExit:
+        # Позволяем sys.exit() работать нормально
+        raise
+    except Exception as e:
+        print(f"Критическая ошибка в main(): {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
