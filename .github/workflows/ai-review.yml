@@ -1,7 +1,6 @@
 name: AI Code Review
 
 on:
-  push:
   pull_request:
 
 jobs:
@@ -26,8 +25,4 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           pip install requests groq PyGithub
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            python .github/workflows/ai_review.py "${{ github.base_ref }}"
-          else
-            python .github/workflows/ai_review.py
-          fi
+          python .github/workflows/ai_review.py "${{ github.base_ref }}"

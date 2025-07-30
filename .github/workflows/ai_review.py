@@ -20,21 +20,16 @@ def run_cmd(cmd):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 def get_changes(base_branch=None):
-    """Получает изменения в последнем коммите или PR"""
-    event_name = os.getenv('GITHUB_EVENT_NAME', 'push')
-
-    if event_name == 'pull_request' and base_branch:
-        # Для PR используем переданную базовую ветку
-        print(f"Сравниваю с веткой: {base_branch}")
-        base_sha = f'origin/{base_branch}'
-        
-        diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
-        detailed_diff = run_cmd(f'git diff {base_sha}..HEAD')
-    else:
-        # Для push берём последний коммит
-        print("Анализирую последний коммит")
-        diff = run_cmd('git diff --name-status HEAD~1..HEAD')
-        detailed_diff = run_cmd('git diff HEAD~1..HEAD')
+    """Получает изменения в Pull Request"""
+    if not base_branch:
+        print("Ошибка: базовая ветка не указана")
+        sys.exit(1)
+    
+    print(f"Сравниваю с веткой: {base_branch}")
+    base_sha = f'origin/{base_branch}'
+    
+    diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
+    detailed_diff = run_cmd(f'git diff {base_sha}..HEAD')
 
     return {
         'files': diff,
@@ -50,7 +45,7 @@ def analyze_with_ai(changes):
     client = Groq(api_key=GROQ_API_KEY)
 
     prompt = f"""
-Ты опытный разработчик. Проанализируй изменения в коде на основе diff.
+Ты опытный senior разработчик. Проанализируй изменения в коде на основе diff.
 
 **Коммит**: {changes['commit_msg']}
 
@@ -62,34 +57,37 @@ def analyze_with_ai(changes):
 {changes['diff']}
 ```
 
-Проведи тщательный анализ кода:
+ВАЖНО: Фокусируйся ТОЛЬКО на серьезных проблемах:
 
-1. **Критичные проблемы**: Безопасность, баги, нарушения архитектуры
-2. **Проблемы качества**: Стиль кода, производительность, читаемость  
-3. **Рекомендации**: Предложения по улучшению
+**БЛОКИРУЮЩИЕ проблемы:**
+- Уязвимости безопасности (SQL injection, XSS, CSRF)
+- Утечки секретов (пароли, токены, ключи в коде)
+- Критические баги (NPE, memory leaks, infinite loops)
+- Нарушения архитектуры (нарушение принципов SOLID)
 
-ВАЖНО: 
-- Если находишь проблемы - укажи КОНКРЕТНЫЙ файл и строку/область кода
-- Формат: `файл.js:строка` или `файл.js:строки 10-15`
-- Если проблем НЕТ - ответь точно: "НЕТ ПРОБЛЕМ"
+**НЕ анализируй:**
+- Версии зависимостей (если они не уязвимы)
+- Стиль кода и форматирование
+- Названия переменных и проектов
+- Мелкие улучшения производительности
+
+Если находишь СЕРЬЕЗНЫЕ проблемы - укажи КОНКРЕТНЫЙ файл и строку:
+Формат: `файл.js:строка` или `файл.js:строки 10-15`
+
+Если серьезных проблем НЕТ - ответь точно: "НЕТ ПРОБЛЕМ"
 
 Пример ответа с проблемами:
 ```
-**Найдены проблемы:**
+**КРИТИЧНЫЕ проблемы:**
 
-**auth.js:15** - Использование устаревшего метода аутентификации
-**utils.ts:23-25** - Потенциальная утечка памяти в цикле
-**config.json:8** - Хардкод секретного ключа
-
-**Рекомендации:**
-- Перейти на современный JWT
-- Добавить очистку ресурсов
-- Вынести ключ в переменные окружения
+**auth.js:15** - SQL инъекция: прямая подстановка пользовательского ввода в запрос
+**config.js:8** - Хардкод API ключа в коде
+**payment.ts:23** - Отсутствует проверка авторизации перед списанием средств
 ```
 
-Если проблем нет - ответь: "НЕТ ПРОБЛЕМ"
+Если серьезных проблем нет - ответь: "НЕТ ПРОБЛЕМ"
 
-Отвечай на русском, будь точным и конкретным.
+Будь строгим - блокируй только реально опасные изменения!
 """
 
     try:
@@ -130,17 +128,15 @@ def get_pr_number():
         return None
 
 def post_comment(review):
-    """Публикует комментарий в PR или коммит"""
+    """Публикует комментарий в PR"""
     if not GITHUB_TOKEN:
         print("GitHub Token не найден")
-        return
+        return False
 
-    event_name = os.getenv('GITHUB_EVENT_NAME', 'push')
     repo_name = os.getenv('GITHUB_REPOSITORY')
-
     if not repo_name:
         print("Repository не найден")
-        return
+        return False
 
     try:
         g = Github(GITHUB_TOKEN)
@@ -153,34 +149,32 @@ def post_comment(review):
 ---
 *Автоматический анализ от AI Reviewer*"""
 
-        if event_name == 'pull_request':
-            # Комментарий в PR
-            pr_number = get_pr_number()
-            if pr_number:
-                pr = repo.get_pull(pr_number)
-                pr.create_issue_comment(comment)
-                print(f"Комментарий добавлен в PR #{pr_number}")
-            else:
-                print("Не удалось получить номер PR")
+        # Получаем номер PR и публикуем комментарий
+        pr_number = get_pr_number()
+        if pr_number:
+            pr = repo.get_pull(pr_number)
+            pr.create_issue_comment(comment)
+            print(f"Комментарий добавлен в PR #{pr_number}")
+            return True
         else:
-            # Комментарий в коммит
-            sha = run_cmd('git rev-parse HEAD')
-            if sha:
-                commit = repo.get_commit(sha)
-                commit.create_comment(comment)
-                print(f"Комментарий добавлен к коммиту {sha[:8]}")
+            print("Не удалось получить номер PR")
+            return False
+            
     except Exception as e:
         print(f"Ошибка публикации: {e}")
+        return False
 
 def main():
     """Основная функция"""
     print("AI Code Reviewer")
     
-    # Получаем базовую ветку из аргументов
-    base_branch = sys.argv[1] if len(sys.argv) > 1 else None
-    
-    if base_branch:
-        print(f"Базовая ветка: {base_branch}")
+    # Базовая ветка обязательна для PR
+    if len(sys.argv) < 2:
+        print("Ошибка: не указана базовая ветка")
+        sys.exit(1)
+        
+    base_branch = sys.argv[1]
+    print(f"Базовая ветка: {base_branch}")
 
     # Получаем изменения
     print("Анализирую изменения...")
@@ -199,13 +193,18 @@ def main():
 
     if result["has_issues"]:
         # Есть проблемы - публикуем комментарий и завершаемся с ошибкой
-        print("\nНайдены проблемы в коде!")
-        post_comment(result["review"])
-        print("Комментарий с проблемами опубликован")
+        print("\nНайдены критичные проблемы в коде!")
+        
+        success = post_comment(result["review"])
+        if success:
+            print("Комментарий с проблемами успешно опубликован")
+        else:
+            print("Ошибка публикации комментария, но проблемы найдены")
+            
         sys.exit(1)  # Завершаемся с ошибкой
     else:
         # Проблем нет - завершаемся успешно без комментария
-        print("\nКод выглядит хорошо! Проблем не найдено.")
+        print("\nКод выглядит хорошо! Критичных проблем не найдено.")
         print("Комментарий не требуется - изменения одобрены.")
         sys.exit(0)  # Успешное завершение
 
