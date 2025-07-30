@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Code Reviewer - анализирует изменения в репозитории
+AI Code Reviewer - analyzes changes in the repository
 """
 
 import os
@@ -15,17 +15,17 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
 def run_cmd(cmd):
-    """Выполняет git команду"""
+    """Executes a git command"""
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else ""
 
 def get_changes(base_branch=None):
-    """Получает изменения в Pull Request"""
+    """Gets changes in Pull Request"""
     if not base_branch:
-        print("Ошибка: базовая ветка не указана")
+        print("Error: base branch not specified")
         sys.exit(1)
     
-    print(f"Сравниваю с веткой: {base_branch}")
+    print(f"Comparing with branch: {base_branch}")
     base_sha = f'origin/{base_branch}'
     
     diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
@@ -33,78 +33,78 @@ def get_changes(base_branch=None):
 
     return {
         'files': diff,
-        'diff': detailed_diff[:10000],  # Увеличиваем лимит для diff
+        'diff': detailed_diff[:10000],  # Increase limit for diff
         'commit_msg': run_cmd('git log -1 --pretty=format:"%s"')
     }
 
 def analyze_with_ai(changes):
-    """Анализирует изменения с помощью AI"""
+    """Analyzes changes using AI"""
     if not GROQ_API_KEY:
-        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
+        return {"has_issues": True, "review": "GROQ_API_KEY not configured"}
 
     client = Groq(api_key=GROQ_API_KEY)
 
     prompt = f"""
-Ты опытный senior разработчик. Проанализируй изменения в коде на основе diff.
+You are an experienced senior developer. Analyze code changes based on the diff.
 
-**Коммит**: {changes['commit_msg']}
+**Commit**: {changes['commit_msg']}
 
-**Измененные файлы**:
+**Changed files**:
 {changes['files']}
 
-**Diff изменений**:
+**Diff changes**:
 ```diff
 {changes['diff']}
 ```
 
-Проведи тщательный анализ кода и найди ВСЕ проблемы:
+Conduct thorough code analysis and find ALL issues:
 
-**1. КРИТИЧНЫЕ проблемы:**
-- Уязвимости безопасности (SQL injection, XSS, CSRF)
-- Утечки секретов (пароли, токены, ключи в коде)
-- Критические баги (NPE, memory leaks, undefined variables, syntax errors)
-- Серьезные нарушения архитектуры
+**1. CRITICAL issues:**
+- Security vulnerabilities (SQL injection, XSS, CSRF)
+- Secret leaks (passwords, tokens, keys in code)
+- Critical bugs (NPE, memory leaks, undefined variables, syntax errors)
+- Serious architecture violations
 
-**2. КАЧЕСТВО КОДА:**
-- Нарушения принципов SOLID, DRY, KISS
-- Плохая архитектура и структура кода
-- Неоптимальная производительность
-- Отсутствие обработки ошибок
-- Магические числа и хардкод значений
+**2. CODE QUALITY:**
+- SOLID, DRY, KISS principle violations
+- Poor architecture and code structure
+- Non-optimal performance
+- Missing error handling
+- Magic numbers and hardcoded values
 
-**3. СТИЛЬ И ЧИСТОТА:**
-- Плохие названия переменных/функций/классов
-- Избыточная сложность методов
-- Нарушения coding standards
-- Отсутствие комментариев в сложных местах
-- Дублирование кода
+**3. STYLE AND CLEANLINESS:**
+- Poor variable/function/class names
+- Excessive method complexity
+- Coding standards violations
+- Missing comments in complex places
+- Code duplication
 
-**ВАЖНАЯ ЛОГИКА:**
-- "НЕТ ПРОБЛЕМ" - ТОЛЬКО если действительно ничего не найдено
-- Не делай общих выводов типа "в целом код хорошо" если есть проблемы
+**IMPORTANT LOGIC:**
+- "NO ISSUES" - ONLY if nothing is actually found
+- Don't make general conclusions like "overall code is good" if there are issues
 
-**НЕ анализируй:**
-- Версии зависимостей (кроме уязвимых)
-- Названия проектов в title/описаниях (это не проблема кода)
+**DON'T analyze:**
+- Dependency versions (unless vulnerable)
+- Project names in titles/descriptions (not a code issue)
 
-Для каждой найденной проблемы укажи: `файл.js:строка` или `файл.js:строки 10-15`
+For each found issue specify: `file.ext:line` or `file.ext:lines 10-15`
 
-**Формат ответа:**
+**Response format:**
 
-Если есть проблемы:
+If there are issues:
 ```
-**main.ts:11** - Использование undefined переменной err22 вместо err
-**api.js:45** - Отсутствует обработка ошибок в async функции
-**component.tsx:12** - Неописательное название переменной 'a'
-```
-
-Если проблем нет - напиши только:
-```
-НЕТ ПРОБЛЕМ
+**file1.ts:11** - Using undefined variable err22 instead of err
+**file2.js:45** - Missing error handling in async function
+**file3.tsx:12** - Non-descriptive variable name 'a'
 ```
 
-НЕ добавляй общие выводы, заключения или фразы типа "в целом код хорошо".
-ТОЛЬКО список проблем ИЛИ "НЕТ ПРОБЛЕМ".
+If no issues - write only:
+```
+NO ISSUES
+```
+
+Don't add general conclusions, summaries or phrases like "overall code looks good".
+ONLY list of issues OR "NO ISSUES".
 """
 
     try:
@@ -117,24 +117,24 @@ def analyze_with_ai(changes):
         
         review_text = response.choices[0].message.content.strip()
         
-        # Более умная проверка наличия проблем
-        has_issues = True  # По умолчанию считаем что проблемы есть
+        # Smart detection of issues presence
+        has_issues = True  # By default assume there are issues
         
-        # Только если AI четко написал "НЕТ ПРОБЛЕМ" и больше ничего существенного
-        if review_text == "НЕТ ПРОБЛЕМ" or (
-            "НЕТ ПРОБЛЕМ" in review_text and 
-            len(review_text.replace("НЕТ ПРОБЛЕМ", "").strip()) < 10
+        # Only if AI clearly wrote "NO ISSUES" and nothing else substantial
+        if review_text == "NO ISSUES" or (
+            "NO ISSUES" in review_text and 
+            len(review_text.replace("NO ISSUES", "").strip()) < 10
         ):
             has_issues = False
         
-        # Дополнительная проверка - если есть указания на конкретные файлы с проблемами
+        # Additional check - if there are references to specific files with issues
         if "**" in review_text and ":" in review_text:
             has_issues = True
             
-        # Если есть слова указывающие на проблемы
+        # If there are words indicating problems
         problem_indicators = [
-            "проблем", "ошибка", "баг", "уязвимост", "нарушени", 
-            "undefined", "null", "error", "warning", "fix", "исправ"
+            "issue", "error", "bug", "vulnerabilit", "violation", 
+            "undefined", "null", "warning", "fix", "problem"
         ]
         
         if any(indicator in review_text.lower() for indicator in problem_indicators):
@@ -146,10 +146,10 @@ def analyze_with_ai(changes):
         }
         
     except Exception as e:
-        return {"has_issues": True, "review": f"Ошибка AI: {e}"}
+        return {"has_issues": True, "review": f"AI Error: {e}"}
 
 def get_pr_number():
-    """Получает номер PR из GitHub event"""
+    """Gets PR number from GitHub event"""
     event_path = os.getenv('GITHUB_EVENT_PATH')
     if not event_path or not os.path.exists(event_path):
         return None
@@ -159,18 +159,18 @@ def get_pr_number():
             event_data = json.load(f)
         return event_data.get('pull_request', {}).get('number')
     except Exception as e:
-        print(f"Ошибка чтения event: {e}")
+        print(f"Event reading error: {e}")
         return None
 
 def post_comment(review):
-    """Публикует комментарий в PR"""
+    """Posts comment to PR"""
     if not GITHUB_TOKEN:
-        print("GitHub Token не найден")
+        print("GitHub Token not found")
         return False
 
     repo_name = os.getenv('GITHUB_REPOSITORY')
     if not repo_name:
-        print("Repository не найден")
+        print("Repository not found")
         return False
 
     try:
@@ -181,67 +181,65 @@ def post_comment(review):
 
 {review}
 
----
-*Автоматический анализ от AI Reviewer*"""
 
-        # Получаем номер PR и публикуем комментарий
+        # Get PR number and post comment
         pr_number = get_pr_number()
         if pr_number:
             pr = repo.get_pull(pr_number)
             pr.create_issue_comment(comment)
-            print(f"Комментарий добавлен в PR #{pr_number}")
+            print(f"Comment added to PR #{pr_number}")
             return True
         else:
-            print("Не удалось получить номер PR")
+            print("Unable to get PR number")
             return False
             
     except Exception as e:
-        print(f"Ошибка публикации: {e}")
+        print(f"Publishing error: {e}")
         return False
 
 def main():
-    """Основная функция"""
+    """Main function"""
     print("AI Code Reviewer")
     
-    # Базовая ветка обязательна для PR
+    # Base branch is required for PR
     if len(sys.argv) < 2:
-        print("Ошибка: не указана базовая ветка")
+        print("Error: base branch not specified")
         sys.exit(1)
         
     base_branch = sys.argv[1]
-    print(f"Базовая ветка: {base_branch}")
+    print(f"Base branch: {base_branch}")
 
-    # Получаем изменения
-    print("Анализирую изменения...")
+    # Get changes
+    print("Analyzing changes...")
     changes = get_changes(base_branch)
 
     if not changes['files']:
-        print("Нет изменений для анализа")
+        print("No changes to analyze")
         sys.exit(0)
 
-    # AI анализ
-    print("Запускаю AI анализ...")
+    # AI analysis
+    print("Running AI analysis...")
     result = analyze_with_ai(changes)
 
-    print("Результат анализа:")
+    print("Analysis result:")
     print(result["review"])
 
     if result["has_issues"]:
-        # Есть проблемы - публикуем комментарий и завершаемся с ошибкой
-        print("\nНайдены критичные проблемы в коде!")
+        # Issues found - publish comment and exit with error
+        print("\nCritical issues found in code!")
         
         success = post_comment(result["review"])
         if success:
-            print("Комментарий с проблемами успешно опубликован")
+            print("Comment with issues successfully published")
         else:
-            print("Ошибка публикации комментария, но проблемы найдены")
+            print("Error publishing comment, but issues were found")
             
-        sys.exit(1)  # Завершаемся с ошибкой
+        sys.exit(1)  # Exit with error
     else:
-        # Проблем нет - завершаемся успешно без комментария
-        print("\nКод выглядит хорошо! Критичных проблем не найдено.")
-        print("Комментарий не требуется - изменения одобрены.")
-        sys.exit(0)  # Успешное завершение
+        # No issues - exit successfully without comment
+        print("\nCode looks good! No critical issues found.")
+        print("No comment required - changes approved.")
+        sys.exit(0)  # Successful completion
 
 if __name__ == "__main__":
     main()
