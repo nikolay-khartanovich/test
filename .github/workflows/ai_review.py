@@ -209,9 +209,6 @@ def post_comment(review):
         return False
 
 def main():
-    """Main function"""
-    print("AI Code Reviewer")
-    
     # Base branch is required for PR
     if len(sys.argv) < 2:
         print("Error: base branch not specified")
@@ -221,7 +218,6 @@ def main():
     print(f"Base branch: {base_branch}")
 
     # Get changes
-    print("Analyzing changes...")
     changes = get_changes(base_branch)
 
     if not changes['files']:
@@ -229,11 +225,7 @@ def main():
         sys.exit(0)
 
     # AI analysis
-    print("Running AI analysis...")
     result = analyze_with_ai(changes)
-
-    print("Analysis result:")
-    print(result["review"])
 
     if result["has_issues"]:
         # Issues found - publish comment and exit with error

@@ -9,7 +9,7 @@ import { RouterLink } from '@angular/router';
     <div style="text-align: center; padding: 20px;">
       <h1>Second Page</h1>
       <p>This is the second page</p>
-      <button [routerLink]="['/']">Back to Home</button>
+      <button [routerLink]="['/']">Back to Home baby</button>
     </div>
   `,
   styles: ``
