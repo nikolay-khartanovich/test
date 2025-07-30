@@ -87,15 +87,28 @@ Conduct thorough code analysis and find ALL issues:
 - Dependency versions (unless vulnerable)
 - Project names in titles/descriptions (not a code issue)
 
-For each found issue specify: `file.ext:line` or `file.ext:lines 10-15`
+For each found issue specify: `file.ext:line` - description + show the problematic code
 
 **Response format:**
 
 If there are issues:
 ```
 **file1.ts:11** - Using undefined variable err22 instead of err
+```js
+console.error('Meticulous failed to initialise: ${err22}');
+//                                                ^^^^^ should be: err
+```
+
 **file2.js:45** - Missing error handling in async function
+```js
+async function fetchData() {
+    return await api.get('/data'); // No try-catch block
+}
+```
+
 **file3.tsx:12** - Non-descriptive variable name 'a'
+```jsx
+const a = getUserData(); // Should be: userData or user
 ```
 
 If no issues - write only:
@@ -104,7 +117,7 @@ NO ISSUES
 ```
 
 Don't add general conclusions, summaries or phrases like "overall code looks good".
-ONLY list of issues OR "NO ISSUES".
+ONLY list of issues with code snippets OR "NO ISSUES".
 """
 
     try:
