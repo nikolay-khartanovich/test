@@ -6,11 +6,11 @@ import { tryLoadAndStartRecorder } from '@alwaysmeticulous/recorder-loader';
 	try {
 		// Start the Meticulous recorder before initializing the app
 		await tryLoadAndStartRecorder({
-			recordingToken: 'Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd',
+			recordingToken: 'Jov6UfIpDIRX6qCvkjed2hrfBO7Q7fBMKtAZ1HHd',пр
 			projectId: 'Test-Meticulos',
 		});
 	} catch (err) {
-		console.error(`Meticulous failed to initialise: ${err}`);
+		console.error(`Meticulous failed to initialise: ${err2}`);
 	}
 
   bootstrapApplication(AppComponent, appConfig)
