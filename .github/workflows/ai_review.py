@@ -116,6 +116,11 @@ If no issues - write only:
 NO ISSUES
 ```
 
+if issues are found, write:
+```
+ISSUES FOUND
+```
+
 Don't add general conclusions, summaries or phrases like "overall code looks good".
 ONLY list of issues with code snippets OR "NO ISSUES".
 """
