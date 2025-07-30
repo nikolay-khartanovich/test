@@ -44,17 +44,17 @@ def analyze_with_ai(changes):
 
     client = Groq(api_key=GROQ_API_KEY)
 
-    prompt = f"""
+    prompt = """
 You are an experienced senior developer. Analyze code changes based on the diff.
 
-**Commit**: {changes['commit_msg']}
+**Commit**: """ + changes['commit_msg'] + """
 
 **Changed files**:
-{changes['files']}
+""" + changes['files'] + """
 
 **Diff changes**:
 ```diff
-{changes['diff']}
+""" + changes['diff'] + """
 ```
 
 Conduct thorough code analysis and find ALL issues:
@@ -87,12 +87,12 @@ Conduct thorough code analysis and find ALL issues:
 - Dependency versions (unless vulnerable)
 - Project names in titles/descriptions (not a code issue)
 
-For each found issue specify: `file.ext:line` - description + show the problematic code
+For each found issue specify: file.ext:line - description + show the problematic code
 
 **Response format:**
 
-If there are issues:
-```
+If there are issues, show each with code snippet:
+
 **file1.ts:11** - Using undefined variable err22 instead of err
 ```js
 console.error('Meticulous failed to initialise: ${err22}');
