@@ -14,106 +14,37 @@ from github import Github
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
-def validate_api_keys():
-    """Проверяет наличие необходимых API ключей с обработкой ошибок"""
-    try:
-        groq_key = os.getenv('GROQ_API_KEY')
-        if not groq_key or groq_key.strip() == '':
-            print("Ошибка: GROQ_API_KEY не найден или пуст в переменных окружения")
-            return False
-        
-        github_token = os.getenv('GITHUB_TOKEN')
-        if not github_token or github_token.strip() == '':
-            print("Ошибка: GITHUB_TOKEN не найден или пуст в переменных окружения")  
-            return False
-            
-        print("API ключи успешно загружены из переменных окружения")
-        return True
-        
-    except Exception as e:
-        print(f"Ошибка при проверке API ключей: {e}")
-        return False
-
 def run_cmd(cmd):
-    """Выполняет только безопасные git команды с улучшенной обработкой ошибок"""
-    # Проверяем, что команда начинается с git для безопасности
-    if not isinstance(cmd, str) or not cmd.strip().startswith('git '):
-        print(f"Ошибка: разрешены только git команды. Получено: {cmd}")
-        return ""
-    
-    # Список разрешенных git команд для дополнительной безопасности
-    allowed_git_commands = ['git diff', 'git log', 'git rev-parse', 'git merge-base']
-    
-    if not any(cmd.strip().startswith(allowed_cmd) for allowed_cmd in allowed_git_commands):
-        print(f"Ошибка: неразрешенная git команда: {cmd}")
-        return ""
-    
-    try:
-        # Безопасно разбиваем команду на аргументы
-        cmd_parts = cmd.strip().split()
-        
-        result = subprocess.run(
-            cmd_parts,  # Используем список вместо строки для безопасности
-            capture_output=True, 
-            text=True,
-            timeout=30,  # Таймаут 30 секунд
-            check=False  # Не поднимаем исключение при ненулевом коде возврата
-        )
-        
-        if result.returncode != 0:
-            print(f"Предупреждение: команда '{' '.join(cmd_parts)}' завершилась с кодом {result.returncode}")
-            if result.stderr:
-                print(f"Stderr: {result.stderr}")
-            
-        return result.stdout.strip()
-        
-    except subprocess.TimeoutExpired:
-        print(f"Ошибка: команда '{cmd}' превысила таймаут")
-        return ""
-    except Exception as e:
-        print(f"Ошибка выполнения команды '{cmd}': {e}")
-        return ""
+    """Выполняет git команду"""
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 def get_changes(base_branch=None):
-    """Получает изменения в Pull Request с полной валидацией"""
+    """Получает изменения в Pull Request"""
     if not base_branch:
         print("Ошибка: базовая ветка не указана")
         sys.exit(1)
     
-    # Дополнительная валидация базовой ветки
-    if not isinstance(base_branch, str) or base_branch.strip() == '':
-        print(f"Ошибка: некорректная базовая ветка: {base_branch}")
-        sys.exit(1)
-        
-    # Проверка на потенциально опасные символы
-    dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '<', '>']
-    if any(char in base_branch for char in dangerous_chars):
-        print(f"Ошибка: базовая ветка содержит опасные символы: {base_branch}")
-        sys.exit(1)
-    
-    base_branch = base_branch.strip()
     print(f"Сравниваю с веткой: {base_branch}")
+    base_sha = f'origin/{base_branch}'
     
-    try:
-        base_sha = f'origin/{base_branch}'
-        
-        diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
-        detailed_diff = run_cmd(f'git diff {base_sha}..HEAD')
-        commit_msg = run_cmd('git log -1 --pretty=format:"%s"')
+    diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
+    detailed_diff = run_cmd(f'git diff {base_sha}..HEAD')
 
-        return {
-            'files': diff,
-            'diff': detailed_diff[:10000],  # Увеличиваем лимит для diff
-            'commit_msg': commit_msg
-        }
-        
-    except Exception as e:
-        print(f"Ошибка получения изменений: {e}")
-        sys.exit(1)
+    return {
+        'files': diff,
+        'diff': detailed_diff[:10000],  # Увеличиваем лимит для diff
+        'commit_msg': run_cmd('git log -1 --pretty=format:"%s"')
+    }
 
-def create_analysis_prompt(changes):
-    """Создает промпт для AI анализа"""
-    return f"""
+def analyze_with_ai(changes):
+    """Анализирует изменения с помощью AI"""
+    if not GROQ_API_KEY:
+        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
+
+    client = Groq(api_key=GROQ_API_KEY)
+
+    prompt = f"""
 Ты опытный senior разработчик. Проанализируй изменения в коде на основе diff.
 
 **Коммит**: {changes['commit_msg']}
@@ -126,41 +57,58 @@ def create_analysis_prompt(changes):
 {changes['diff']}
 ```
 
-Найди проблемы в коде и предложи улучшения:
+Проведи тщательный анализ кода по категориям:
 
-- Уязвимости безопасности
-- Баги и потенциальные ошибки  
-- Нарушения принципов хорошего кода (SOLID, DRY, KISS)
-- Плохие названия переменных/функций
-- Сложные функции (можно разбить)
-- Дублирование кода
-- Отсутствие обработки ошибок
+**1. КРИТИЧНЫЕ проблемы (блокируют PR):**
+- Уязвимости безопасности (SQL injection, XSS, CSRF)
+- Утечки секретов (пароли, токены, ключи в коде)
+- Критические баги (NPE, memory leaks, infinite loops)
+- Серьезные нарушения архитектуры
+
+**2. КАЧЕСТВО КОДА (требуют исправления):**
+- Нарушения принципов SOLID, DRY, KISS
+- Плохая архитектура и структура кода
 - Неоптимальная производительность
-- Магические числа и хардкод
+- Отсутствие обработки ошибок
+- Магические числа и хардкод значений
 
-Для каждой проблемы укажи файл и строку: `файл.js:строка`
+**3. СТИЛЬ И ЧИСТОТА (должны быть исправлены):**
+- Плохие названия переменных/функций/классов
+- Избыточная сложность методов
+- Нарушения coding standards
+- Отсутствие комментариев в сложных местах
+- Дублирование кода
+- Неконсистентный стиль
+
+**НЕ анализируй:**
+- Версии зависимостей (кроме уязвимых)
+- Названия проектов в title/описаниях
+
+Если находишь проблемы - укажи КОНКРЕТНЫЙ файл и строку:
+Формат: `файл.js:строка` или `файл.js:строки 10-15`
 
 Если проблем НЕТ - ответь точно: "НЕТ ПРОБЛЕМ"
 
-Пример ответа:
+Пример ответа с проблемами:
 ```
+**КРИТИЧНЫЕ проблемы:**
 **auth.js:15** - SQL инъекция: прямая подстановка пользовательского ввода
-**utils.ts:23** - Функция слишком сложная, разбить на части  
+
+**КАЧЕСТВО КОДА:**
+**utils.ts:23-25** - Нарушение DRY: дублирование логики валидации
 **api.js:45** - Отсутствует обработка ошибок в async функции
-**component.tsx:12** - Плохое название переменной 'a', использовать описательное
+
+**СТИЛЬ И ЧИСТОТА:**
+**component.tsx:12** - Плохое название переменной 'a' вместо описательного
+**service.js:8** - Функция слишком сложная (20+ строк), разбить на части
 ```
 
 Если проблем нет - ответь: "НЕТ ПРОБЛЕМ"
+
+Будь строгим к качеству кода - хороший код должен быть чистым!
 """
 
-def call_ai_api(prompt):
-    """Вызывает AI API для анализа с полной обработкой ошибок"""
-    if not GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY не настроен")
-    
     try:
-        client = Groq(api_key=GROQ_API_KEY)
-        
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
@@ -168,39 +116,17 @@ def call_ai_api(prompt):
             temperature=0.1
         )
         
-        if not response or not response.choices:
-            raise ValueError("Пустой ответ от AI API")
-            
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("Пустое содержимое в ответе AI")
-            
-        return content.strip()
+        review_text = response.choices[0].message.content.strip()
         
-    except Exception as api_error:
-        print(f"Ошибка вызова AI API: {api_error}")
-        raise
-
-def parse_ai_response(review_text):
-    """Парсит ответ AI и определяет наличие проблем"""
-    has_issues = not (review_text == "НЕТ ПРОБЛЕМ" or 
-                     "нет проблем" in review_text.lower() or
-                     "проблем не найдено" in review_text.lower())
-    
-    return {
-        "has_issues": has_issues,
-        "review": review_text
-    }
-
-def analyze_with_ai(changes):
-    """Анализирует изменения с помощью AI"""
-    if not GROQ_API_KEY:
-        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
-
-    try:
-        prompt = create_analysis_prompt(changes)
-        review_text = call_ai_api(prompt)
-        return parse_ai_response(review_text)
+        # Проверяем, есть ли проблемы
+        has_issues = not (review_text == "НЕТ ПРОБЛЕМ" or 
+                         "нет проблем" in review_text.lower() or
+                         "проблем не найдено" in review_text.lower())
+        
+        return {
+            "has_issues": has_issues,
+            "review": review_text
+        }
         
     except Exception as e:
         return {"has_issues": True, "review": f"Ошибка AI: {e}"}
@@ -220,25 +146,19 @@ def get_pr_number():
         return None
 
 def post_comment(review):
-    """Публикует комментарий в PR с проверками существования"""
+    """Публикует комментарий в PR"""
     if not GITHUB_TOKEN:
         print("GitHub Token не найден")
         return False
 
     repo_name = os.getenv('GITHUB_REPOSITORY')
     if not repo_name:
-        print("Repository не найден в переменных окружения")
+        print("Repository не найден")
         return False
 
     try:
         g = Github(GITHUB_TOKEN)
-        
-        # Проверяем существование репозитория
-        try:
-            repo = g.get_repo(repo_name)
-        except Exception as repo_error:
-            print(f"Ошибка доступа к репозиторию {repo_name}: {repo_error}")
-            return False
+        repo = g.get_repo(repo_name)
 
         comment = f"""## AI Code Review
 
@@ -247,97 +167,64 @@ def post_comment(review):
 ---
 *Автоматический анализ от AI Reviewer*"""
 
-        # Получаем номер PR и проверяем его существование
+        # Получаем номер PR и публикуем комментарий
         pr_number = get_pr_number()
-        if not pr_number:
-            print("Не удалось получить номер PR из GitHub event")
-            return False
-            
-        try:
+        if pr_number:
             pr = repo.get_pull(pr_number)
-            # Проверяем, что PR открыт
-            if pr.state != 'open':
-                print(f"PR #{pr_number} не открыт (состояние: {pr.state})")
-                return False
-                
-        except Exception as pr_error:
-            print(f"Ошибка доступа к PR #{pr_number}: {pr_error}")
-            return False
-            
-        # Публикуем комментарий
-        try:
             pr.create_issue_comment(comment)
             print(f"Комментарий добавлен в PR #{pr_number}")
             return True
-        except Exception as comment_error:
-            print(f"Ошибка создания комментария в PR #{pr_number}: {comment_error}")
+        else:
+            print("Не удалось получить номер PR")
             return False
             
     except Exception as e:
-        print(f"Общая ошибка публикации: {e}")
+        print(f"Ошибка публикации: {e}")
         return False
 
 def main():
-    """Основная функция с полной обработкой ошибок"""
-    try:
-        print("AI Code Reviewer")
+    """Основная функция"""
+    print("AI Code Reviewer")
+    
+    # Базовая ветка обязательна для PR
+    if len(sys.argv) < 2:
+        print("Ошибка: не указана базовая ветка")
+        sys.exit(1)
         
-        # Проверяем API ключи в начале
-        if not validate_api_keys():
-            print("Не удалось загрузить API ключи")
-            sys.exit(1)
+    base_branch = sys.argv[1]
+    print(f"Базовая ветка: {base_branch}")
+
+    # Получаем изменения
+    print("Анализирую изменения...")
+    changes = get_changes(base_branch)
+
+    if not changes['files']:
+        print("Нет изменений для анализа")
+        sys.exit(0)
+
+    # AI анализ
+    print("Запускаю AI анализ...")
+    result = analyze_with_ai(changes)
+
+    print("Результат анализа:")
+    print(result["review"])
+
+    if result["has_issues"]:
+        # Есть проблемы - публикуем комментарий и завершаемся с ошибкой
+        print("\nНайдены критичные проблемы в коде!")
         
-        # Базовая ветка обязательна для PR
-        if len(sys.argv) < 2:
-            print("Ошибка: не указана базовая ветка")
-            sys.exit(1)
-            
-        base_branch = sys.argv[1]
-        print(f"Базовая ветка: {base_branch}")
-
-        # Получаем изменения
-        print("Анализирую изменения...")
-        changes = get_changes(base_branch)
-
-        if not changes['files']:
-            print("Нет изменений для анализа")
-            sys.exit(0)
-
-        # AI анализ
-        print("Запускаю AI анализ...")
-        result = analyze_with_ai(changes)
-
-        print("Результат анализа:")
-        print(result["review"])
-
-        if result["has_issues"]:
-            # Есть проблемы - публикуем комментарий и завершаемся с ошибкой
-            print("\nНайдены критичные проблемы в коде!")
-            
-            success = post_comment(result["review"])
-            if success:
-                print("Комментарий с проблемами успешно опубликован")
-            else:
-                print("Ошибка публикации комментария, но проблемы найдены")
-                
-            sys.exit(1)  # Завершаемся с ошибкой
+        success = post_comment(result["review"])
+        if success:
+            print("Комментарий с проблемами успешно опубликован")
         else:
-            # Проблем нет - завершаемся успешно без комментария
-            print("\nКод выглядит хорошо! Критичных проблем не найдено.")
-            print("Комментарий не требуется - изменения одобрены.")
-            sys.exit(0)  # Успешное завершение
+            print("Ошибка публикации комментария, но проблемы найдены")
             
-    except KeyboardInterrupt:
-        print("\nПрерывание выполнения пользователем")
-        sys.exit(1)
-    except SystemExit:
-        # Позволяем sys.exit() работать нормально
-        raise
-    except Exception as e:
-        print(f"Критическая ошибка в main(): {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        sys.exit(1)  # Завершаемся с ошибкой
+    else:
+        # Проблем нет - завершаемся успешно без комментария
+        print("\nКод выглядит хорошо! Критичных проблем не найдено.")
+        print("Комментарий не требуется - изменения одобрены.")
+        sys.exit(0)  # Успешное завершение
 
 if __name__ == "__main__":
     main()
