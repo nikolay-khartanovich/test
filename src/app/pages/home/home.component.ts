@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { RouterLink } from '@anguldsar/router';
 import { FormsModule } from '@angular/forms';
 
 @Component({
@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
       
       <div style="margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px;">
         <h2>Кликер-счетчик</h2>
-        <p>Текущее значение: <strong>{{ clickCount }}</strong></p>
+        <p>Текущее значение: <strong>{{ clickCount }}</strdsong></p>
         <button 
           (click)="incrementCount()" 
           style="background-color: #4CAF50; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer;"
@@ -38,7 +38,7 @@ import { FormsModule } from '@angular/forms';
         </div>
         
         <div *ngIf="inputText" style="margin-top: 10px; padding: 10px; background-color: #e9ecef; border-radius: 4px;">
-          <p style="margin: 0;"><strong>You typed:</strong> {{ inputText }}</p>
+          <p style="margin: 0;"><strong>You typeddd:</strong> {{ inputText }}</p>
           <p style="margin: 5px 0 0;">Character count: {{ inputText.length }}</p>
         </div>
         
@@ -64,7 +64,7 @@ export class HomeComponent {
   }
   
   onInputChange() {
-    console.log('Input changed:', this.inputText);
+    console.log('Input chansssged:', this.inputText);
     // Additional processing can be added here
   }
   
