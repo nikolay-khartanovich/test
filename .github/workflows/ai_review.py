@@ -14,8 +14,33 @@ from github import Github
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
+def validate_api_keys():
+    """Проверяет наличие необходимых API ключей"""
+    if not GROQ_API_KEY:
+        print("Ошибка: GROQ_API_KEY не найден в переменных окружения")
+        return False
+    
+    if not GITHUB_TOKEN:
+        print("Ошибка: GITHUB_TOKEN не найден в переменных окружения")  
+        return False
+        
+    print("API ключи успешно загружены из переменных окружения")
+    return True
+
 def run_cmd(cmd):
-    """Выполняет git команду с улучшенной обработкой ошибок"""
+    """Выполняет только безопасные git команды с улучшенной обработкой ошибок"""
+    # Проверяем, что команда начинается с git для безопасности
+    if not isinstance(cmd, str) or not cmd.strip().startswith('git '):
+        print(f"Ошибка: разрешены только git команды. Получено: {cmd}")
+        return ""
+    
+    # Список разрешенных git команд для дополнительной безопасности
+    allowed_git_commands = ['git diff', 'git log', 'git rev-parse', 'git merge-base']
+    
+    if not any(cmd.strip().startswith(allowed_cmd) for allowed_cmd in allowed_git_commands):
+        print(f"Ошибка: неразрешенная git команда: {cmd}")
+        return ""
+    
     try:
         result = subprocess.run(
             cmd, 
@@ -100,17 +125,32 @@ def create_analysis_prompt(changes):
 """
 
 def call_ai_api(prompt):
-    """Вызывает AI API для анализа"""
-    client = Groq(api_key=GROQ_API_KEY)
+    """Вызывает AI API для анализа с полной обработкой ошибок"""
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY не настроен")
     
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=800,
-        temperature=0.1
-    )
-    
-    return response.choices[0].message.content.strip()
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=800,
+            temperature=0.1
+        )
+        
+        if not response or not response.choices:
+            raise ValueError("Пустой ответ от AI API")
+            
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("Пустое содержимое в ответе AI")
+            
+        return content.strip()
+        
+    except Exception as api_error:
+        print(f"Ошибка вызова AI API: {api_error}")
+        raise
 
 def parse_ai_response(review_text):
     """Парсит ответ AI и определяет наличие проблем"""
@@ -151,19 +191,25 @@ def get_pr_number():
         return None
 
 def post_comment(review):
-    """Публикует комментарий в PR"""
+    """Публикует комментарий в PR с проверками существования"""
     if not GITHUB_TOKEN:
         print("GitHub Token не найден")
         return False
 
     repo_name = os.getenv('GITHUB_REPOSITORY')
     if not repo_name:
-        print("Repository не найден")
+        print("Repository не найден в переменных окружения")
         return False
 
     try:
         g = Github(GITHUB_TOKEN)
-        repo = g.get_repo(repo_name)
+        
+        # Проверяем существование репозитория
+        try:
+            repo = g.get_repo(repo_name)
+        except Exception as repo_error:
+            print(f"Ошибка доступа к репозиторию {repo_name}: {repo_error}")
+            return False
 
         comment = f"""## AI Code Review
 
@@ -172,24 +218,44 @@ def post_comment(review):
 ---
 *Автоматический анализ от AI Reviewer*"""
 
-        # Получаем номер PR и публикуем комментарий
+        # Получаем номер PR и проверяем его существование
         pr_number = get_pr_number()
-        if pr_number:
+        if not pr_number:
+            print("Не удалось получить номер PR из GitHub event")
+            return False
+            
+        try:
             pr = repo.get_pull(pr_number)
+            # Проверяем, что PR открыт
+            if pr.state != 'open':
+                print(f"PR #{pr_number} не открыт (состояние: {pr.state})")
+                return False
+                
+        except Exception as pr_error:
+            print(f"Ошибка доступа к PR #{pr_number}: {pr_error}")
+            return False
+            
+        # Публикуем комментарий
+        try:
             pr.create_issue_comment(comment)
             print(f"Комментарий добавлен в PR #{pr_number}")
             return True
-        else:
-            print("Не удалось получить номер PR")
+        except Exception as comment_error:
+            print(f"Ошибка создания комментария в PR #{pr_number}: {comment_error}")
             return False
             
     except Exception as e:
-        print(f"Ошибка публикации: {e}")
+        print(f"Общая ошибка публикации: {e}")
         return False
 
 def main():
     """Основная функция"""
     print("AI Code Reviewer")
+    
+    # Проверяем API ключи в начале
+    if not validate_api_keys():
+        print("Не удалось загрузить API ключи")
+        sys.exit(1)
     
     # Базовая ветка обязательна для PR
     if len(sys.argv) < 2:
