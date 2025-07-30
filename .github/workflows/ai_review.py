@@ -15,9 +15,29 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
 def run_cmd(cmd):
-    """Выполняет git команду"""
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    return result.stdout.strip() if result.returncode == 0 else ""
+    """Выполняет git команду с улучшенной обработкой ошибок"""
+    try:
+        result = subprocess.run(
+            cmd, 
+            shell=True, 
+            capture_output=True, 
+            text=True,
+            timeout=30,  # Таймаут 30 секунд
+            check=False  # Не поднимаем исключение при ненулевом коде возврата
+        )
+        
+        if result.returncode != 0:
+            print(f"Предупреждение: команда '{cmd}' завершилась с кодом {result.returncode}")
+            print(f"Stderr: {result.stderr}")
+            
+        return result.stdout.strip()
+        
+    except subprocess.TimeoutExpired:
+        print(f"Ошибка: команда '{cmd}' превысила таймаут")
+        return ""
+    except Exception as e:
+        print(f"Ошибка выполнения команды '{cmd}': {e}")
+        return ""
 
 def get_changes(base_branch=None):
     """Получает изменения в Pull Request"""
@@ -37,14 +57,9 @@ def get_changes(base_branch=None):
         'commit_msg': run_cmd('git log -1 --pretty=format:"%s"')
     }
 
-def analyze_with_ai(changes):
-    """Анализирует изменения с помощью AI"""
-    if not GROQ_API_KEY:
-        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
-
-    client = Groq(api_key=GROQ_API_KEY)
-
-    prompt = f"""
+def create_analysis_prompt(changes):
+    """Создает промпт для AI анализа"""
+    return f"""
 Ты опытный senior разработчик. Проанализируй изменения в коде на основе diff.
 
 **Коммит**: {changes['commit_msg']}
@@ -57,76 +72,66 @@ def analyze_with_ai(changes):
 {changes['diff']}
 ```
 
-Проведи тщательный анализ кода по категориям:
+Найди проблемы в коде и предложи улучшения:
 
-**1. КРИТИЧНЫЕ проблемы (блокируют PR):**
-- Уязвимости безопасности (SQL injection, XSS, CSRF)
-- Утечки секретов (пароли, токены, ключи в коде)
-- Критические баги (NPE, memory leaks, infinite loops)
-- Серьезные нарушения архитектуры
-
-**2. КАЧЕСТВО КОДА (требуют исправления):**
-- Нарушения принципов SOLID, DRY, KISS
-- Плохая архитектура и структура кода
-- Неоптимальная производительность
-- Отсутствие обработки ошибок
-- Магические числа и хардкод значений
-
-**3. СТИЛЬ И ЧИСТОТА (должны быть исправлены):**
-- Плохие названия переменных/функций/классов
-- Избыточная сложность методов
-- Нарушения coding standards
-- Отсутствие комментариев в сложных местах
+- Уязвимости безопасности
+- Баги и потенциальные ошибки  
+- Нарушения принципов хорошего кода (SOLID, DRY, KISS)
+- Плохие названия переменных/функций
+- Сложные функции (можно разбить)
 - Дублирование кода
-- Неконсистентный стиль
+- Отсутствие обработки ошибок
+- Неоптимальная производительность
+- Магические числа и хардкод
 
-**НЕ анализируй:**
-- Версии зависимостей (кроме уязвимых)
-- Названия проектов в title/описаниях
-
-Если находишь проблемы - укажи КОНКРЕТНЫЙ файл и строку:
-Формат: `файл.js:строка` или `файл.js:строки 10-15`
+Для каждой проблемы укажи файл и строку: `файл.js:строка`
 
 Если проблем НЕТ - ответь точно: "НЕТ ПРОБЛЕМ"
 
-Пример ответа с проблемами:
+Пример ответа:
 ```
-**КРИТИЧНЫЕ проблемы:**
 **auth.js:15** - SQL инъекция: прямая подстановка пользовательского ввода
-
-**КАЧЕСТВО КОДА:**
-**utils.ts:23-25** - Нарушение DRY: дублирование логики валидации
+**utils.ts:23** - Функция слишком сложная, разбить на части  
 **api.js:45** - Отсутствует обработка ошибок в async функции
-
-**СТИЛЬ И ЧИСТОТА:**
-**component.tsx:12** - Плохое название переменной 'a' вместо описательного
-**service.js:8** - Функция слишком сложная (20+ строк), разбить на части
+**component.tsx:12** - Плохое название переменной 'a', использовать описательное
 ```
 
 Если проблем нет - ответь: "НЕТ ПРОБЛЕМ"
-
-Будь строгим к качеству кода - хороший код должен быть чистым!
 """
 
+def call_ai_api(prompt):
+    """Вызывает AI API для анализа"""
+    client = Groq(api_key=GROQ_API_KEY)
+    
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=800,
+        temperature=0.1
+    )
+    
+    return response.choices[0].message.content.strip()
+
+def parse_ai_response(review_text):
+    """Парсит ответ AI и определяет наличие проблем"""
+    has_issues = not (review_text == "НЕТ ПРОБЛЕМ" or 
+                     "нет проблем" in review_text.lower() or
+                     "проблем не найдено" in review_text.lower())
+    
+    return {
+        "has_issues": has_issues,
+        "review": review_text
+    }
+
+def analyze_with_ai(changes):
+    """Анализирует изменения с помощью AI"""
+    if not GROQ_API_KEY:
+        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
+
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=800,
-            temperature=0.1
-        )
-        
-        review_text = response.choices[0].message.content.strip()
-        
-        # Проверяем, есть ли проблемы
-        has_issues = not (review_text == "НЕТ ПРОБЛЕМ" or 
-                         "нет проблем" in review_text.lower() or
-                         "проблем не найдено" in review_text.lower())
-        
-        return {
-            "has_issues": has_issues,
-            "review": review_text
-        }
+        prompt = create_analysis_prompt(changes)
+        review_text = call_ai_api(prompt)
+        return parse_ai_response(review_text)
         
     except Exception as e:
         return {"has_issues": True, "review": f"Ошибка AI: {e}"}
