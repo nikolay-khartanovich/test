@@ -116,10 +116,7 @@ If no issues - write only:
 NO ISSUES
 ```
 
-if issues are found, write:
-```
-ISSUES FOUND
-```
+if issues are found, not write "NO ISSUES" in context of the review. Write "Rewiewer by LLLM models" and write model name
 
 Don't add general conclusions, summaries or phrases like "overall code looks good".
 ONLY list of issues with code snippets OR "NO ISSUES".
