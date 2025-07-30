@@ -179,9 +179,7 @@ def post_comment(review):
 
         comment = f"""## AI Code Review
 
-{review}
-
-
+{review}"""
         # Get PR number and post comment
         pr_number = get_pr_number()
         if pr_number:
