@@ -10,7 +10,7 @@ import { tryLoadAndStartRecorder } from '@alwaysmeticulous/recorder-loader';
 			projectId: 'Test-Meticulos',
 		});
 	} catch (err) {
-		console.error(`Meticulous failed to initialise: ${err2}`);
+		console.error(`Meticulous failed to initialise: ${err223}`);
 	}
 
   bootstrapApplication(AppComponent, appConfig)
