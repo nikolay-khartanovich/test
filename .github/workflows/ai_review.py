@@ -98,12 +98,13 @@ def analyze_with_ai(changes):
 **component.tsx:12** - Неописательное название переменной 'a'
 ```
 
-Если проблем действительно нет:
+Если проблем нет - напиши только:
 ```
 НЕТ ПРОБЛЕМ
 ```
 
-ПОМНИ: Найдены проблемы = НЕ пиши "НЕТ ПРОБЛЕМ"!
+НЕ добавляй общие выводы, заключения или фразы типа "в целом код хорошо".
+ТОЛЬКО список проблем ИЛИ "НЕТ ПРОБЛЕМ".
 """
 
     try:
@@ -116,10 +117,28 @@ def analyze_with_ai(changes):
         
         review_text = response.choices[0].message.content.strip()
         
-        # Проверяем, есть ли проблемы
-        has_issues = not (review_text == "НЕТ ПРОБЛЕМ" or 
-                         "нет проблем" in review_text.lower() or
-                         "проблем не найдено" in review_text.lower())
+        # Более умная проверка наличия проблем
+        has_issues = True  # По умолчанию считаем что проблемы есть
+        
+        # Только если AI четко написал "НЕТ ПРОБЛЕМ" и больше ничего существенного
+        if review_text == "НЕТ ПРОБЛЕМ" or (
+            "НЕТ ПРОБЛЕМ" in review_text and 
+            len(review_text.replace("НЕТ ПРОБЛЕМ", "").strip()) < 10
+        ):
+            has_issues = False
+        
+        # Дополнительная проверка - если есть указания на конкретные файлы с проблемами
+        if "**" in review_text and ":" in review_text:
+            has_issues = True
+            
+        # Если есть слова указывающие на проблемы
+        problem_indicators = [
+            "проблем", "ошибка", "баг", "уязвимост", "нарушени", 
+            "undefined", "null", "error", "warning", "fix", "исправ"
+        ]
+        
+        if any(indicator in review_text.lower() for indicator in problem_indicators):
+            has_issues = True
         
         return {
             "has_issues": has_issues,
