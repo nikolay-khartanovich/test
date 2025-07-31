@@ -49,19 +49,23 @@ def create_analysis_prompt(changes):
     return f"""
 You are an experienced senior developer. Analyze code changes based on the diff.
 
-**CRITICAL INSTRUCTION: You MUST only show REAL code from the provided diff below. NEVER create synthetic examples.**
+**CRITICAL INSTRUCTION: You MUST only analyze files shown in "Changed files" below. NEVER analyze files not in this list.**
 
 **Commit**: {changes['commit_msg']}
 
-**Changed files**:
+**Changed files (ONLY analyze these files):**
 {changes['files']}
 
-**Diff changes**:
+**Diff changes:**
 ```diff
 {changes['diff']}
 ```
 
-**REMINDER: All code examples must be copy-pasted from the above diff. Do not invent code.**
+**STRICT LIMITATIONS:**
+- ONLY analyze files listed in "Changed files" above
+- NEVER analyze files not mentioned in the changed files list
+- NEVER invent code that doesn't exist in the diff
+- If a file has no actual changes in the diff, don't analyze it
 
 Conduct thorough code analysis and find ALL issues:
 
@@ -128,14 +132,45 @@ Conduct thorough code analysis and find ALL issues:
 For each issue use this EXACT format:
 
 file.ext:line - detailed description of the problem
+
 ```language
-EXACT code from diff with 5-10 lines context (copy-pasted, not rewritten)
+# ТЕКУЩИЙ КОД (из diff):
+Copy-paste EXACT current code from the diff above (5-10 lines context)  # ❌ Описание проблемы
+
+# ИСПРАВЛЕННЫЙ КОД:
+Show how the code should be fixed with improvements marked  # ✅ Объяснение исправления
 ```
 
-**FINAL CHECK before submitting your response:**
-- Verify every code example exists in the provided diff above
-- Confirm you haven't created any synthetic examples
-- Ensure all line numbers are accurate to the provided diff
+**EXAMPLE OF CORRECT FORMAT:**
+
+**ai_review.py:25 - Missing error handling in subprocess call**
+
+```python
+# ТЕКУЩИЙ КОД (проблема):
+def run_cmd(cmd):
+    """Executes git command and returns result"""
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # ❌ Нет обработки ошибок
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+# ИСПРАВЛЕННЫЙ КОД:
+def run_cmd(cmd):
+    """Executes git command and returns result"""
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)  # ✅ Добавлен timeout
+        if result.returncode != 0:
+            print(f"Git command failed: {result.stderr}")  # ✅ Показываем ошибку
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception as e:  # ✅ Обрабатываем исключения
+        print(f"Error executing command: {e}")
+        return ""
+```
+
+**CRITICAL RULES:**
+- ONLY analyze files that appear in the diff above
+- CURRENT CODE section must be EXACT copy from diff
+- If you cannot find exact code in diff, skip this issue
+- Never analyze files not mentioned in the "Changed files" section
+- Always provide both CURRENT CODE and SUGGESTED FIX sections
 
 If no issues: "NO ISSUES"
 """
@@ -171,7 +206,7 @@ def analyze_with_single_model(changes, model_name):
             "error": True
         }
 
-def create_synthesis_prompt(model_reviews):
+def create_synthesis_prompt(model_reviews, changed_files=""):
     """Creates prompt for synthesis of final report"""
     reviews_text = ""
     for review_data in model_reviews:
@@ -184,11 +219,21 @@ def create_synthesis_prompt(model_reviews):
     return f"""
 You are an experienced senior developer. You have code analyses from multiple AI models. Your task is to create a comprehensive final report.
 
-**CRITICAL: Only use code examples that were actually provided in the model analyses below. Never create synthetic examples.**
+**FILES ACTUALLY CHANGED (only analyze these):**
+{changed_files}
+
+**CRITICAL RULES:**
+1. Only use code examples that were actually provided in the model analyses below
+2. Only include issues for files listed in "FILES ACTUALLY CHANGED" above
+3. Never create synthetic examples or analyze non-existent files
+4. If a model analyzed a file that doesn't exist in the changed files, ignore that analysis
 
 {reviews_text}
 
-**REMINDER: Any code you include must be copied from the analyses above, not invented by you.**
+**VERIFICATION CHECKLIST:**
+- Only report issues for files that appear in "FILES ACTUALLY CHANGED"
+- Ignore any model analysis of non-existent or unmodified files  
+- Copy real code from analyses, never invent examples
 
 **YOUR TASK:**
 1. Analyze all model opinions
@@ -210,16 +255,101 @@ You are an experienced senior developer. You have code analyses from multiple AI
 
 If there are issues, for EVERY issue use EXACTLY this format:
 
-- file.ext:line - detailed description of the issue and how to fix it
-```python
-# ONLY show ACTUAL code from the model analyses above
-# Copy-paste exact lines from the provided analyses
-# If no real code available, write: Code example unavailable
-# NEVER create synthetic examples like this one
+**file.ext:line - detailed description of the issue and how to fix it**
+
+```language
+# ТЕКУЩИЙ КОД (из оригинального diff):
+Copy-paste exact current code from model analyses above (with sufficient context)  # ❌ Описание проблемы
+
+# ИСПРАВЛЕННЫЙ КОД:
+Show the corrected version of the code with improvements  # ✅ Объяснение исправления
 ```
 
-**WARNING: The above is a BAD example showing what NOT to do**
-**ALWAYS use real code from model analyses, never synthetic examples**
+**EXAMPLES OF CORRECT REPORT FORMAT:**
+
+**Example 1: Error handling issue**
+**ai_review.py:25 - Function handles errors poorly and should include proper exception handling**
+
+```python
+# ТЕКУЩИЙ КОД (из оригинального diff):
+def run_cmd(cmd):
+    """Executes git command and returns result"""
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # ❌ Нет обработки ошибок и timeout
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+# ИСПРАВЛЕННЫЙ КОД:
+def run_cmd(cmd):
+    """Executes git command and returns result"""
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)  # ✅ Добавлен timeout
+        if result.returncode != 0:
+            print(f"Git command failed: {result.stderr}")  # ✅ Логируем ошибки
+            return ""
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:  # ✅ Обработка timeout
+        print(f"Command timed out: {cmd}")
+        return ""
+    except Exception as e:  # ✅ Общая обработка исключений
+        print(f"Error executing command: {e}")
+        return ""
+```
+
+**Example 2: Magic numbers**
+**ai_review.py:14 - Magic numbers should be extracted to named constants**
+
+```python
+# ТЕКУЩИЙ КОД (из оригинального diff):
+MAX_TOKENS_ANALYSIS = 3000  # ❌ Магические числа без объяснения логики
+MAX_TOKENS_SYNTHESIS = 4000  # ❌ Непонятно почему именно эти значения
+
+# ИСПРАВЛЕННЫЙ КОД:
+# Token limits configuration with clear reasoning
+ANALYSIS_BASE_TOKENS = 1500      # ✅ Базовый размер для анализа
+ANALYSIS_CONTEXT_TOKENS = 1500   # ✅ Дополнительные токены для контекста
+SYNTHESIS_BASE_TOKENS = 2000     # ✅ Базовый размер для синтеза  
+SYNTHESIS_EXAMPLES_TOKENS = 2000 # ✅ Токены для примеров кода
+
+MAX_TOKENS_ANALYSIS = ANALYSIS_BASE_TOKENS + ANALYSIS_CONTEXT_TOKENS      # ✅ 3000
+MAX_TOKENS_SYNTHESIS = SYNTHESIS_BASE_TOKENS + SYNTHESIS_EXAMPLES_TOKENS  # ✅ 4000
+```
+
+**Example 3: Missing null checks**
+**ai_review.py:45 - Function doesn't validate input parameters**
+
+```python
+# ТЕКУЩИЙ КОД (из оригинального diff):
+def get_changes(base_branch=None):
+    """Gets changes in Pull Request"""
+    if not base_branch:  # ❌ Проверка только на falsy значения
+        print("Error: base branch not specified")
+        sys.exit(1)
+    
+    print(f"Comparing with branch: {base_branch}")  # ❌ Нет валидации формата ветки
+    base_sha = f'origin/{base_branch}'
+    
+# ИСПРАВЛЕННЫЙ КОД:
+def get_changes(base_branch=None):
+    """Gets changes in Pull Request"""
+    if not base_branch or not isinstance(base_branch, str) or not base_branch.strip():  # ✅ Полная валидация
+        print("Error: base branch must be a non-empty string")
+        sys.exit(1)
+    
+    base_branch = base_branch.strip()  # ✅ Очищаем пробелы
+    if '/' in base_branch and not base_branch.startswith('origin/'):  # ✅ Валидация формата
+        print(f"Warning: unusual branch format: {base_branch}")
+    
+    print(f"Comparing with branch: {base_branch}")
+    base_sha = f'origin/{base_branch}'
+```
+
+**STRICT RULES:**
+- Use SINGLE code block with both current and fixed code
+- Mark problematic lines with # ❌ comments explaining issues
+- Mark improvements with # ✅ comments explaining fixes
+- Copy exact current code from model analyses, never invent
+- Only include issues for files that actually exist in the diff
+- If model analysis doesn't show real code, write "Code example not available"
+- Always use format: "# ТЕКУЩИЙ КОД" followed by "# ИСПРАВЛЕННЫЙ КОД" in same block
 
 ---
 *Reviewed by AI Ensemble: {models_list}*
@@ -239,14 +369,14 @@ NO ISSUES
 - When in doubt, skip the code example rather than inventing one
 """
 
-def create_final_report(model_reviews):
+def create_final_report(model_reviews, changed_files=""):
     """Creates final report based on analyses from multiple models"""
     if not GROQ_API_KEY:
         return {"has_issues": True, "review": "GROQ_API_KEY not configured"}
 
     try:
         client = Groq(api_key=GROQ_API_KEY)
-        synthesis_prompt = create_synthesis_prompt(model_reviews)
+        synthesis_prompt = create_synthesis_prompt(model_reviews, changed_files)
         
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -277,7 +407,6 @@ def analyze_with_ai(changes):
     # List of models for analysis
     models_to_use = [
         "llama-3.3-70b-versatile",
-        "llama-3.1-70b-versatile", 
         "mixtral-8x7b-32768",
         "gemma2-9b-it"
     ]
@@ -302,7 +431,7 @@ def analyze_with_ai(changes):
         return {"has_issues": True, "review": "All models returned errors"}
     
     print("Creating final report...")
-    final_result = create_final_report(model_reviews)
+    final_result = create_final_report(model_reviews, changes['files'])
     
     print("Analysis completed!")
     return final_result
