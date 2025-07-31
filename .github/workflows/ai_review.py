@@ -46,19 +46,19 @@ def get_changes(base_branch=None):
 
 def create_analysis_prompt(changes):
     """Creates prompt for analysis by a single model"""
-    return f"""
+    return """
 You are an experienced senior developer. Analyze code changes based on the diff.
 
 **CRITICAL INSTRUCTION: You MUST only analyze files shown in "Changed files" below. NEVER analyze files not in this list.**
 
-**Commit**: {changes['commit_msg']}
+**Commit**: {commit_msg}
 
 **Changed files (ONLY analyze these files):**
-{changes['files']}
+{files}
 
 **Diff changes:**
 ```diff
-{changes['diff']}
+{diff}
 ```
 
 **STRICT LIMITATIONS:**
@@ -173,7 +173,11 @@ def run_cmd(cmd):
 - Always provide both CURRENT CODE and SUGGESTED FIX sections
 
 If no issues: "NO ISSUES"
-"""
+""".format(
+        commit_msg=changes['commit_msg'],
+        files=changes['files'],
+        diff=changes['diff']
+    )
 
 def analyze_with_single_model(changes, model_name):
     """Analyzes changes with a single specific model"""
@@ -211,12 +215,12 @@ def create_synthesis_prompt(model_reviews, changed_files=""):
     reviews_text = ""
     for review_data in model_reviews:
         if not review_data["error"]:
-            reviews_text += f"\n**MODEL ANALYSIS {review_data['model']}:**\n{review_data['review']}\n"
+            reviews_text += "\n**MODEL ANALYSIS {}:**\n{}\n".format(review_data['model'], review_data['review'])
     
     successful_models = [r["model"] for r in model_reviews if not r["error"]]
     models_list = ', '.join(successful_models)
     
-    return f"""
+    return """
 You are an experienced senior developer. You have code analyses from multiple AI models. Your task is to create a comprehensive final report.
 
 **FILES ACTUALLY CHANGED (only analyze these):**
@@ -367,7 +371,11 @@ NO ISSUES
 - If model analyses don't contain proper code examples, write "Code example not available from analyses"
 - Every single line of code must be traceable to the provided model analyses
 - When in doubt, skip the code example rather than inventing one
-"""
+""".format(
+        changed_files=changed_files,
+        reviews_text=reviews_text,
+        models_list=models_list
+    )
 
 def create_final_report(model_reviews, changed_files=""):
     """Creates final report based on analyses from multiple models"""
@@ -465,9 +473,9 @@ def post_comment(review):
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(repo_name)
 
-        comment = f"""## AI Code Review
+        comment = """## AI Code Review
 
-{review}"""
+{}""".format(review)
         
         pr_number = get_pr_number_from_event()
         if not pr_number:
