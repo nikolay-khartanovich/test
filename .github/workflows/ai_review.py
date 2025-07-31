@@ -11,8 +11,8 @@ from groq import Groq
 from github import Github
 
 # Configuration constants
-MAX_TOKENS_ANALYSIS = 2000  # Increased for more detailed code examples
-MAX_TOKENS_SYNTHESIS = 2500  # Increased for detailed final report
+MAX_TOKENS_ANALYSIS = 3000  # Increased for real code examples with context
+MAX_TOKENS_SYNTHESIS = 4000  # Increased for detailed final report with real code
 MAX_DIFF_LENGTH = 10000
 TEMPERATURE_ANALYSIS = 0.1
 TEMPERATURE_SYNTHESIS = 0.2
@@ -49,6 +49,8 @@ def create_analysis_prompt(changes):
     return f"""
 You are an experienced senior developer. Analyze code changes based on the diff.
 
+**CRITICAL INSTRUCTION: You MUST only show REAL code from the provided diff below. NEVER create synthetic examples.**
+
 **Commit**: {changes['commit_msg']}
 
 **Changed files**:
@@ -58,6 +60,8 @@ You are an experienced senior developer. Analyze code changes based on the diff.
 ```diff
 {changes['diff']}
 ```
+
+**REMINDER: All code examples must be copy-pasted from the above diff. Do not invent code.**
 
 Conduct thorough code analysis and find ALL issues:
 
@@ -101,24 +105,37 @@ Conduct thorough code analysis and find ALL issues:
 - TODO/FIXME comments without context
 
 **CRITICAL REQUIREMENTS FOR CODE EXAMPLES:**
-- For EVERY issue you find, you MUST show the COMPLETE problematic code fragment
-- Include AT LEAST 3-5 lines of context BEFORE and AFTER the problematic line
-- Show the FULL function/method if it's short (under 15 lines)
-- DO NOT use placeholder comments like "# ... rest of code ..." or "// ... existing code ..."
-- Show REAL, ACTUAL code from the diff
+- For EVERY issue you find, you MUST show the EXACT REAL CODE from the provided diff
+- Include AT LEAST 5-10 lines of context BEFORE and AFTER the problematic line
+- Show the FULL function/method if it's short (under 20 lines)
+- ABSOLUTELY FORBIDDEN: making up code, synthetic examples, placeholder comments
+- ONLY show code that ACTUALLY EXISTS in the provided diff above
+- Copy-paste the EXACT lines from the diff - don't paraphrase or rewrite
+
+**STRICT VERIFICATION RULES:**
+- Before writing any code example, verify it exists EXACTLY in the provided diff
+- If you cannot find the exact code in the diff, DO NOT create synthetic examples
+- Every line of code you show must be traceable to the actual diff content
+- Match indentation, spacing, and syntax EXACTLY as shown in diff
 
 **IMPORTANT:**
 - Be specific and precise in your analysis
 - Focus on actual code issues, not theoretical problems
 - If no issues found, write only "NO ISSUES"
+- NEVER invent code examples - only use what's actually in the diff
 
 **RESPONSE FORMAT - MANDATORY:**
 For each issue use this EXACT format:
 
 file.ext:line - detailed description of the problem
 ```language
-actual complete code fragment with sufficient context
+EXACT code from diff with 5-10 lines context (copy-pasted, not rewritten)
 ```
+
+**FINAL CHECK before submitting your response:**
+- Verify every code example exists in the provided diff above
+- Confirm you haven't created any synthetic examples
+- Ensure all line numbers are accurate to the provided diff
 
 If no issues: "NO ISSUES"
 """
@@ -167,7 +184,11 @@ def create_synthesis_prompt(model_reviews):
     return f"""
 You are an experienced senior developer. You have code analyses from multiple AI models. Your task is to create a comprehensive final report.
 
+**CRITICAL: Only use code examples that were actually provided in the model analyses below. Never create synthetic examples.**
+
 {reviews_text}
+
+**REMINDER: Any code you include must be copied from the analyses above, not invented by you.**
 
 **YOUR TASK:**
 1. Analyze all model opinions
@@ -176,13 +197,14 @@ You are an experienced senior developer. You have code analyses from multiple AI
 4. Create a clear structured report
 5. MANDATORY show COMPLETE code for each issue
 
-**CRITICAL CODE REQUIREMENTS:**
-- For EVERY issue show COMPLETE code fragment with context
-- Include minimum 5-10 lines of context around the problematic line
-- DO NOT use placeholders like "# ... rest of code ...", "// ... existing code ..."
-- Show REAL code from diff, not examples
-- If function is short (up to 20 lines) - show it entirely
-- Specify correct line numbers
+**CRITICAL CODE REQUIREMENTS - ABSOLUTELY MANDATORY:**
+- For EVERY issue show EXACT code fragment from the original diff analysis
+- Include minimum 8-15 lines of context around the problematic line
+- ABSOLUTELY FORBIDDEN: creating synthetic code examples or fake code
+- ONLY copy-paste REAL code that was provided in the model analyses above
+- If you cannot find real code in the analyses, write "Code example unavailable" instead
+- Match indentation, spacing, variable names, and syntax EXACTLY
+- Verify every code line exists in the provided model analyses before including it
 
 **RESPONSE FORMAT:**
 
@@ -190,22 +212,14 @@ If there are issues, for EVERY issue use EXACTLY this format:
 
 - file.ext:line - detailed description of the issue and how to fix it
 ```python
-def example_function():
-    # show real code with sufficient context
-    # minimum 5-10 lines around problematic line
-    # no placeholders or ellipsis!
-    problematic_line = "real code here"
-    return result
+# ONLY show ACTUAL code from the model analyses above
+# Copy-paste exact lines from the provided analyses
+# If no real code available, write: Code example unavailable
+# NEVER create synthetic examples like this one
 ```
 
-- file.ext:line - another issue
-```python
-class ExampleClass:
-    def method_with_issue(self):
-        # complete context of real code
-        real_problematic_code = value
-        return something
-```
+**WARNING: The above is a BAD example showing what NOT to do**
+**ALWAYS use real code from model analyses, never synthetic examples**
 
 ---
 *Reviewed by AI Ensemble: {models_list}*
@@ -215,10 +229,14 @@ If NO issues:
 NO ISSUES
 ```
 
-**ABSOLUTELY CRITICAL:** 
+**ABSOLUTELY CRITICAL - FINAL VERIFICATION:** 
+- Before including ANY code example, double-check it exists in the model analyses above
 - DON'T abbreviate code! Show enough lines to understand context!
 - DON'T use "..." or placeholders in code!
-- Every example must contain REAL code from the file!
+- NEVER create synthetic examples - only copy-paste from model analyses
+- If model analyses don't contain proper code examples, write "Code example not available from analyses"
+- Every single line of code must be traceable to the provided model analyses
+- When in doubt, skip the code example rather than inventing one
 """
 
 def create_final_report(model_reviews):
