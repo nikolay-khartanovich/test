@@ -37,10 +37,10 @@ def get_changes(base_branch=None):
         'commit_msg': run_cmd('git log -1 --pretty=format:"%s"')
     }
 
-def analyze_with_ai(changes):
-    """Analyzes changes using AI"""
+def analyze_with_ai_single_model(changes, model_name):
+    """Анализирует изменения одной конкретной моделью"""
     if not GROQ_API_KEY:
-        return {"has_issues": True, "review": "GROQ_API_KEY not configured"}
+        return {"model": model_name, "review": "GROQ_API_KEY не настроен", "error": True}
 
     client = Groq(api_key=GROQ_API_KEY)
 
@@ -65,12 +65,27 @@ Conduct thorough code analysis and find ALL issues:
 - Critical bugs (NPE, memory leaks, undefined variables, syntax errors)
 - Serious architecture violations
 
-**2. CODE QUALITY:**
+**2. CODE QUALITY & BEST PRACTICES:**
 - SOLID, DRY, KISS principle violations
 - Poor architecture and code structure
 - Non-optimal performance
 - Missing error handling
 - Magic numbers and hardcoded values
+- Deep nesting (avoid loops/conditions more than 3 levels deep)
+- Long methods/functions (more than 20-30 lines)
+- Functions with too many parameters (more than 4-5)
+- Complex conditional statements (multiple && || operators)
+- Repeated code patterns that should be extracted
+- Missing early returns (prefer guard clauses)
+- Pyramid of doom (deeply nested callbacks/promises)
+- Switch statements that should be polymorphism
+- Violation of single responsibility principle
+- God objects/classes (too many responsibilities)
+- Tight coupling between components
+- Missing abstractions for complex logic
+- Synchronous operations that should be async
+- Missing null/undefined checks
+- Improper exception handling (catching generic exceptions)
 
 **3. STYLE AND CLEANLINESS:**
 - Poor variable/function/class names
@@ -78,90 +93,157 @@ Conduct thorough code analysis and find ALL issues:
 - Coding standards violations
 - Missing comments in complex places
 - Code duplication
+- Inconsistent formatting
+- Dead code (unused variables, functions)
+- Console.log statements in production code
+- TODO/FIXME comments without context
 
-**IMPORTANT LOGIC:**
-- "NO ISSUES" - ONLY if nothing is actually found
-- Don't make general conclusions like "overall code is good" if there are issues
-
-**DON'T analyze:**
-- Dependency versions (unless vulnerable)
-- Project names in titles/descriptions (not a code issue)
+**IMPORTANT:**
+- Be specific and precise in your analysis
+- Focus on actual code issues, not theoretical problems
+- If no issues found, write only "NO ISSUES"
 
 For each found issue specify: file.ext:line - description + show the problematic code
 
-**Response format:**
-
-If there are issues, show each with code snippet:
-
-**file1.ts:11** - Using undefined variable err22 instead of err
-```js
-console.error('Meticulous failed to initialise: ${err22}');
-//                                                ^^^^^ should be: err
-```
-
-**file2.js:45** - Missing error handling in async function
-```js
-async function fetchData() {
-    return await api.get('/data'); // No try-catch block
-}
-```
-
-**file3.tsx:12** - Non-descriptive variable name 'a'
-```jsx
-const a = getUserData(); // Should be: userData or user
-```
-
-If no issues - write only:
-```
-NO ISSUES
-```
-
-if issues are found, not write "NO ISSUES" in context of the review. Write "Rewiewer by LLLM models" and write model name
-
-Don't add general conclusions, summaries or phrases like "overall code looks good".
-ONLY list of issues with code snippets OR "NO ISSUES".
+Response format - list specific issues with code snippets or "NO ISSUES".
 """
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=800,
+            max_tokens=1000,
             temperature=0.1
         )
         
         review_text = response.choices[0].message.content.strip()
         
-        # Smart detection of issues presence
-        has_issues = True  # By default assume there are issues
-        
-        # Only if AI clearly wrote "NO ISSUES" and nothing else substantial
-        if review_text == "NO ISSUES" or (
-            "NO ISSUES" in review_text and 
-            len(review_text.replace("NO ISSUES", "").strip()) < 10
-        ):
-            has_issues = False
-        
-        # Additional check - if there are references to specific files with issues
-        if "**" in review_text and ":" in review_text:
-            has_issues = True
-            
-        # If there are words indicating problems
-        problem_indicators = [
-            "issue", "error", "bug", "vulnerabilit", "violation", 
-            "undefined", "null", "warning", "fix", "problem"
-        ]
-        
-        if any(indicator in review_text.lower() for indicator in problem_indicators):
-            has_issues = True
-        
         return {
-            "has_issues": has_issues,
-            "review": review_text
+            "model": model_name,
+            "review": review_text,
+            "error": False
         }
         
     except Exception as e:
-        return {"has_issues": True, "review": f"AI Error: {e}"}
+        return {
+            "model": model_name,
+            "review": f"Ошибка анализа: {e}",
+            "error": True
+        }
+
+def create_final_report(model_reviews):
+    """Создает итоговый отчет на основе анализов нескольких моделей"""
+    if not GROQ_API_KEY:
+        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
+
+    client = Groq(api_key=GROQ_API_KEY)
+    
+    # Собираем все ответы моделей
+    reviews_text = ""
+    for i, review_data in enumerate(model_reviews):
+        if not review_data["error"]:
+            reviews_text += f"\n**АНАЛИЗ МОДЕЛИ {review_data['model']}:**\n{review_data['review']}\n"
+    
+    synthesis_prompt = f"""
+Ты опытный ведущий разработчик. У тебя есть анализы кода от нескольких AI моделей. Твоя задача - создать итоговый грамотный отчет.
+
+{reviews_text}
+
+**ТВОЯ ЗАДАЧА:**
+1. Проанализируй все мнения моделей
+2. Выдели только РЕАЛЬНЫЕ проблемы (не дублируй одинаковые)
+3. Проигнорируй ложные срабатывания
+4. Создай четкий структурированный отчет
+
+**ФОРМАТ ОТВЕТА:**
+
+Если есть проблемы:
+
+- file.ext:line - описание проблемы
+```code
+проблемный код
+```
+
+- file.ext:line - описание проблемы
+```code
+проблемный код  
+```
+
+- file.ext:line - описание проблемы
+
+---
+*Reviewed by AI Ensemble: {', '.join([r["model"] for r in model_reviews if not r["error"]]))}*
+
+Если проблем НЕТ:
+```
+NO ISSUES
+```
+
+Будь конкретен, не добавляй общие фразы. Только список проблем с кодом или "NO ISSUES".
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",  # Используем самую мощную модель для синтеза
+            messages=[{"role": "user", "content": synthesis_prompt}],
+            max_tokens=1200,
+            temperature=0.2
+        )
+        
+        final_review = response.choices[0].message.content.strip()
+        
+        # Определяем есть ли проблемы
+        has_issues = True
+        if final_review == "NO ISSUES" or (
+            "NO ISSUES" in final_review and 
+            len(final_review.replace("NO ISSUES", "").strip()) < 10
+        ):
+            has_issues = False
+        
+        return {
+            "has_issues": has_issues,
+            "review": final_review
+        }
+        
+    except Exception as e:
+        return {"has_issues": True, "review": f"Ошибка создания итогового отчета: {e}"}
+
+def analyze_with_ai(changes):
+    """Анализирует изменения с помощью нескольких AI моделей и создает итоговый отчет"""
+    
+    # Список моделей для анализа
+    models_to_use = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-70b-versatile", 
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it"
+    ]
+    
+    print("Запускаем анализ несколькими моделями...")
+    
+    # Получаем анализы от разных моделей
+    model_reviews = []
+    for model in models_to_use:
+        print(f"Анализ модели {model}...")
+        review = analyze_with_ai_single_model(changes, model)
+        model_reviews.append(review)
+        
+        if review["error"]:
+            print(f"Ошибка в модели {model}: {review['review']}")
+        else:
+            print(f"Модель {model} завершил анализ")
+    
+    # Проверяем что хотя бы одна модель сработала
+    successful_reviews = [r for r in model_reviews if not r["error"]]
+    if not successful_reviews:
+        return {"has_issues": True, "review": "Все модели вернули ошибки"}
+    
+    print("Создаем итоговый отчет...")
+    # Создаем итоговый отчет на основе всех анализов
+    final_result = create_final_report(model_reviews)
+    
+    print("Анализ завершен!")
+    return final_result
 
 def get_pr_number():
     """Gets PR number from GitHub event"""
