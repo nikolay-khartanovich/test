@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Code Reviewer - analyzes changes in the repository
+AI Code Reviewer - анализирует изменения в репозитории с помощью нескольких AI моделей
 """
 
 import os
@@ -10,22 +10,29 @@ import sys
 from groq import Groq
 from github import Github
 
+# Константы конфигурации
+MAX_TOKENS_ANALYSIS = 1000
+MAX_TOKENS_SYNTHESIS = 1200
+MAX_DIFF_LENGTH = 10000
+TEMPERATURE_ANALYSIS = 0.1
+TEMPERATURE_SYNTHESIS = 0.2
+
 # Настройки
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
 
 def run_cmd(cmd):
-    """Executes a git command"""
+    """Выполняет git команду и возвращает результат"""
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else ""
 
 def get_changes(base_branch=None):
-    """Gets changes in Pull Request"""
+    """Получает изменения в Pull Request"""
     if not base_branch:
-        print("Error: base branch not specified")
+        print("Ошибка: базовая ветка не указана")
         sys.exit(1)
     
-    print(f"Comparing with branch: {base_branch}")
+    print(f"Сравниваем с веткой: {base_branch}")
     base_sha = f'origin/{base_branch}'
     
     diff = run_cmd(f'git diff --name-status {base_sha}..HEAD')
@@ -33,28 +40,23 @@ def get_changes(base_branch=None):
 
     return {
         'files': diff,
-        'diff': detailed_diff[:10000],  # Increase limit for diff
+        'diff': detailed_diff[:MAX_DIFF_LENGTH],
         'commit_msg': run_cmd('git log -1 --pretty=format:"%s"')
     }
 
-def analyze_with_ai_single_model(changes, model_name):
-    """Анализирует изменения одной конкретной моделью"""
-    if not GROQ_API_KEY:
-        return {"model": model_name, "review": "GROQ_API_KEY не настроен", "error": True}
-
-    client = Groq(api_key=GROQ_API_KEY)
-
-    prompt = """
+def create_analysis_prompt(changes):
+    """Создает prompt для анализа одной моделью"""
+    return f"""
 You are an experienced senior developer. Analyze code changes based on the diff.
 
-**Commit**: """ + changes['commit_msg'] + """
+**Commit**: {changes['commit_msg']}
 
 **Changed files**:
-""" + changes['files'] + """
+{changes['files']}
 
 **Diff changes**:
 ```diff
-""" + changes['diff'] + """
+{changes['diff']}
 ```
 
 Conduct thorough code analysis and find ALL issues:
@@ -108,12 +110,20 @@ For each found issue specify: file.ext:line - description + show the problematic
 Response format - list specific issues with code snippets or "NO ISSUES".
 """
 
+def analyze_with_single_model(changes, model_name):
+    """Анализирует изменения одной конкретной моделью"""
+    if not GROQ_API_KEY:
+        return {"model": model_name, "review": "GROQ_API_KEY не настроен", "error": True}
+
     try:
+        client = Groq(api_key=GROQ_API_KEY)
+        prompt = create_analysis_prompt(changes)
+        
         response = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000,
-            temperature=0.1
+            max_tokens=MAX_TOKENS_ANALYSIS,
+            temperature=TEMPERATURE_ANALYSIS
         )
         
         review_text = response.choices[0].message.content.strip()
@@ -131,20 +141,17 @@ Response format - list specific issues with code snippets or "NO ISSUES".
             "error": True
         }
 
-def create_final_report(model_reviews):
-    """Создает итоговый отчет на основе анализов нескольких моделей"""
-    if not GROQ_API_KEY:
-        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
-
-    client = Groq(api_key=GROQ_API_KEY)
-    
-    # Собираем все ответы моделей
+def create_synthesis_prompt(model_reviews):
+    """Создает prompt для синтеза итогового отчета"""
     reviews_text = ""
-    for i, review_data in enumerate(model_reviews):
+    for review_data in model_reviews:
         if not review_data["error"]:
             reviews_text += f"\n**АНАЛИЗ МОДЕЛИ {review_data['model']}:**\n{review_data['review']}\n"
     
-    synthesis_prompt = f"""
+    successful_models = [r["model"] for r in model_reviews if not r["error"]]
+    models_list = ', '.join(successful_models)
+    
+    return f"""
 Ты опытный ведущий разработчик. У тебя есть анализы кода от нескольких AI моделей. Твоя задача - создать итоговый грамотный отчет.
 
 {reviews_text}
@@ -154,51 +161,61 @@ def create_final_report(model_reviews):
 2. Выдели только РЕАЛЬНЫЕ проблемы (не дублируй одинаковые)
 3. Проигнорируй ложные срабатывания
 4. Создай четкий структурированный отчет
+5. ОБЯЗАТЕЛЬНО покажи код для каждой проблемы
 
 **ФОРМАТ ОТВЕТА:**
 
-Если есть проблемы:
+Если есть проблемы, показывай КАЖДУЮ проблему с кодом:
 
 - file.ext:line - описание проблемы
 ```code
-проблемный код
+проблемный код из файла
 ```
 
 - file.ext:line - описание проблемы
 ```code
-проблемный код  
+проблемный код из файла
 ```
 
 - file.ext:line - описание проблемы
+```code
+проблемный код из файла
+```
 
 ---
-*Reviewed by AI Ensemble: {', '.join([r["model"] for r in model_reviews if not r["error"]])}*
+*Reviewed by AI Ensemble: {models_list}*
 
 Если проблем НЕТ:
 ```
 NO ISSUES
 ```
 
-Будь конкретен, не добавляй общие фразы. Только список проблем с кодом или "NO ISSUES".
+ВАЖНО: Для каждой проблемы ОБЯЗАТЕЛЬНО приводи конкретный код! Будь конкретен, не добавляй общие фразы.
 """
 
+def create_final_report(model_reviews):
+    """Создает итоговый отчет на основе анализов нескольких моделей"""
+    if not GROQ_API_KEY:
+        return {"has_issues": True, "review": "GROQ_API_KEY не настроен"}
+
     try:
+        client = Groq(api_key=GROQ_API_KEY)
+        synthesis_prompt = create_synthesis_prompt(model_reviews)
+        
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  # Используем самую мощную модель для синтеза
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": synthesis_prompt}],
-            max_tokens=1200,
-            temperature=0.2
+            max_tokens=MAX_TOKENS_SYNTHESIS,
+            temperature=TEMPERATURE_SYNTHESIS
         )
         
         final_review = response.choices[0].message.content.strip()
         
         # Определяем есть ли проблемы
-        has_issues = True
-        if final_review == "NO ISSUES" or (
+        has_issues = not (final_review == "NO ISSUES" or (
             "NO ISSUES" in final_review and 
             len(final_review.replace("NO ISSUES", "").strip()) < 10
-        ):
-            has_issues = False
+        ))
         
         return {
             "has_issues": has_issues,
@@ -225,7 +242,7 @@ def analyze_with_ai(changes):
     model_reviews = []
     for model in models_to_use:
         print(f"Анализ модели {model}...")
-        review = analyze_with_ai_single_model(changes, model)
+        review = analyze_with_single_model(changes, model)
         model_reviews.append(review)
         
         if review["error"]:
@@ -239,15 +256,14 @@ def analyze_with_ai(changes):
         return {"has_issues": True, "review": "Все модели вернули ошибки"}
     
     print("Создаем итоговый отчет...")
-    # Создаем итоговый отчет на основе всех анализов
     final_result = create_final_report(model_reviews)
     
     print("Анализ завершен!")
     return final_result
 
-def get_pr_number():
-    """Gets PR number from GitHub event"""
-    event_path = os.getenv('GITHUB_EVENT_PATH')
+def get_pr_number_from_event():
+    """Получает номер PR из GitHub event"""
+    event_path = os.environ.get('GITHUB_EVENT_PATH')
     if not event_path or not os.path.exists(event_path):
         return None
     
@@ -256,18 +272,18 @@ def get_pr_number():
             event_data = json.load(f)
         return event_data.get('pull_request', {}).get('number')
     except Exception as e:
-        print(f"Event reading error: {e}")
+        print(f"Ошибка чтения event: {e}")
         return None
 
 def post_comment(review):
-    """Posts comment to PR"""
+    """Публикует комментарий в PR с обработкой ошибок"""
     if not GITHUB_TOKEN:
-        print("GitHub Token not found")
+        print("GitHub Token не найден")
         return False
 
-    repo_name = os.getenv('GITHUB_REPOSITORY')
+    repo_name = os.environ.get('GITHUB_REPOSITORY')
     if not repo_name:
-        print("Repository not found")
+        print("Репозиторий не найден")
         return False
 
     try:
@@ -277,56 +293,57 @@ def post_comment(review):
         comment = f"""## AI Code Review
 
 {review}"""
-        # Get PR number and post comment
-        pr_number = get_pr_number()
-        if pr_number:
-            pr = repo.get_pull(pr_number)
-            pr.create_issue_comment(comment)
-            print(f"Comment added to PR #{pr_number}")
-            return True
-        else:
-            print("Unable to get PR number")
+        
+        pr_number = get_pr_number_from_event()
+        if not pr_number:
+            print("Не удалось получить номер PR")
             return False
             
+        pr = repo.get_pull(pr_number)
+        pr.create_issue_comment(comment)
+        print(f"Комментарий добавлен в PR #{pr_number}")
+        return True
+        
     except Exception as e:
-        print(f"Publishing error: {e}")
+        print(f"Ошибка публикации: {e}")
         return False
 
 def main():
-    # Base branch is required for PR
+    """Основная функция - точка входа в программу"""
+    # Базовая ветка обязательна для PR
     if len(sys.argv) < 2:
-        print("Error: base branch not specified")
+        print("Ошибка: базовая ветка не указана")
         sys.exit(1)
         
     base_branch = sys.argv[1]
-    print(f"Base branch: {base_branch}")
+    print(f"Базовая ветка: {base_branch}")
 
-    # Get changes
+    # Получаем изменения
     changes = get_changes(base_branch)
 
     if not changes['files']:
-        print("No changes to analyze")
+        print("Нет изменений для анализа")
         sys.exit(0)
 
-    # AI analysis
+    # AI анализ
     result = analyze_with_ai(changes)
 
     if result["has_issues"]:
-        # Issues found - publish comment and exit with error
-        print("\nCritical issues found in code!")
+        # Найдены проблемы - публикуем комментарий и завершаем с ошибкой
+        print("\nКритические проблемы найдены в коде!")
         
         success = post_comment(result["review"])
         if success:
-            print("Comment with issues successfully published")
+            print("Комментарий с проблемами успешно опубликован")
         else:
-            print("Error publishing comment, but issues were found")
+            print("Ошибка публикации комментария, но проблемы найдены")
             
-        sys.exit(1)  # Exit with error
+        sys.exit(1)  # Завершение с ошибкой
     else:
-        # No issues - exit successfully without comment
-        print("\nCode looks good! No critical issues found.")
-        print("No comment required - changes approved.")
-        sys.exit(0)  # Successful completion
+        # Проблем нет - завершаем успешно без комментария
+        print("\nКод выглядит хорошо! Критических проблем не найдено.")
+        print("Комментарий не требуется - изменения одобрены.")
+        sys.exit(0)  # Успешное завершение
 
 if __name__ == "__main__":
     main()
