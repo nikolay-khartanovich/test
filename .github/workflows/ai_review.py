@@ -172,7 +172,7 @@ def create_final_report(model_reviews):
 - file.ext:line - описание проблемы
 
 ---
-*Reviewed by AI Ensemble: {', '.join([r["model"] for r in model_reviews if not r["error"]]))}*
+*Reviewed by AI Ensemble: {', '.join([r["model"] for r in model_reviews if not r["error"]])}*
 
 Если проблем НЕТ:
 ```
