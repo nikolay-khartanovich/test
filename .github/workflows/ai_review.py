@@ -148,13 +148,13 @@ Show how the code should be fixed with improvements marked  # ✅ Объясне
 ```python
 # ТЕКУЩИЙ КОД (проблема):
 def run_cmd(cmd):
-    """Executes git command and returns result"""
+    '''Executes git command and returns result'''
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # ❌ Нет обработки ошибок
     return result.stdout.strip() if result.returncode == 0 else ""
 
 # ИСПРАВЛЕННЫЙ КОД:
 def run_cmd(cmd):
-    """Executes git command and returns result"""
+    '''Executes git command and returns result'''
     try:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)  # ✅ Добавлен timeout
         if result.returncode != 0:
@@ -273,13 +273,13 @@ Show the corrected version of the code with improvements  # ✅ Объяснен
 ```python
 # ТЕКУЩИЙ КОД (из оригинального diff):
 def run_cmd(cmd):
-    """Executes git command and returns result"""
+    '''Executes git command and returns result'''
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # ❌ Нет обработки ошибок и timeout
     return result.stdout.strip() if result.returncode == 0 else ""
 
 # ИСПРАВЛЕННЫЙ КОД:
 def run_cmd(cmd):
-    """Executes git command and returns result"""
+    '''Executes git command and returns result'''
     try:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)  # ✅ Добавлен timeout
         if result.returncode != 0:
@@ -319,7 +319,7 @@ MAX_TOKENS_SYNTHESIS = SYNTHESIS_BASE_TOKENS + SYNTHESIS_EXAMPLES_TOKENS  # ✅ 
 ```python
 # ТЕКУЩИЙ КОД (из оригинального diff):
 def get_changes(base_branch=None):
-    """Gets changes in Pull Request"""
+    '''Gets changes in Pull Request'''
     if not base_branch:  # ❌ Проверка только на falsy значения
         print("Error: base branch not specified")
         sys.exit(1)
@@ -329,7 +329,7 @@ def get_changes(base_branch=None):
     
 # ИСПРАВЛЕННЫЙ КОД:
 def get_changes(base_branch=None):
-    """Gets changes in Pull Request"""
+    '''Gets changes in Pull Request'''
     if not base_branch or not isinstance(base_branch, str) or not base_branch.strip():  # ✅ Полная валидация
         print("Error: base branch must be a non-empty string")
         sys.exit(1)
