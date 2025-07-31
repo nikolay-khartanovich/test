@@ -65,27 +65,12 @@ Conduct thorough code analysis and find ALL issues:
 - Critical bugs (NPE, memory leaks, undefined variables, syntax errors)
 - Serious architecture violations
 
-**2. CODE QUALITY & BEST PRACTICES:**
+**2. CODE QUALITY:**
 - SOLID, DRY, KISS principle violations
 - Poor architecture and code structure
 - Non-optimal performance
 - Missing error handling
 - Magic numbers and hardcoded values
-- Deep nesting (avoid loops/conditions more than 3 levels deep)
-- Long methods/functions (more than 20-30 lines)
-- Functions with too many parameters (more than 4-5)
-- Complex conditional statements (multiple && || operators)
-- Repeated code patterns that should be extracted
-- Missing early returns (prefer guard clauses)
-- Pyramid of doom (deeply nested callbacks/promises)
-- Switch statements that should be polymorphism
-- Violation of single responsibility principle
-- God objects/classes (too many responsibilities)
-- Tight coupling between components
-- Missing abstractions for complex logic
-- Synchronous operations that should be async
-- Missing null/undefined checks
-- Improper exception handling (catching generic exceptions)
 
 **3. STYLE AND CLEANLINESS:**
 - Poor variable/function/class names
@@ -93,10 +78,6 @@ Conduct thorough code analysis and find ALL issues:
 - Coding standards violations
 - Missing comments in complex places
 - Code duplication
-- Inconsistent formatting
-- Dead code (unused variables, functions)
-- Console.log statements in production code
-- TODO/FIXME comments without context
 
 **IMPORTANT LOGIC:**
 - "NO ISSUES" - ONLY if nothing is actually found
@@ -125,26 +106,9 @@ async function fetchData() {
 }
 ```
 
-**file3.tsx:12** - Deep nesting - consider extracting to separate functions
+**file3.tsx:12** - Non-descriptive variable name 'a'
 ```jsx
-for (let i = 0; i < items.length; i++) {
-  if (items[i].active) {
-    for (let j = 0; j < items[i].children.length; j++) {
-      if (items[i].children[j].visible) {
-        for (let k = 0; k < items[i].children[j].data.length; k++) {
-          // 4 levels deep - too complex
-        }
-      }
-    }
-  }
-}
-```
-
-**file4.js:23** - Function with too many parameters
-```js
-function processUser(id, name, email, phone, address, age, role, status) {
-  // Consider using object parameter instead
-}
+const a = getUserData(); // Should be: userData or user
 ```
 
 If no issues - write only:
