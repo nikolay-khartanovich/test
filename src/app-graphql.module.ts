@@ -27,7 +27,12 @@ let refreshing = false;
 let refreshToken$: Observable<void>;
 
 // Generates a random base56 string of the specified length for use as a short URL or transaction ID.
-// The comment is written in English so that the text can be correctly recognized in screenshots.
+/**
+ * Generates a random base56 string of the specified length, omitting ambiguous characters.
+ *
+ * @param length - The desired length of the generated string
+ * @returns A random base56 string suitable for use as a transaction or short URL ID
+ */
 function createTransactionId(length: number = 20): string {
 	// Base56 excludes easily confused characters: 0, O, I, l, and similar
 	const base56Chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
@@ -39,6 +44,11 @@ function createTransactionId(length: number = 20): string {
 	return result;
 }
 
+/**
+ * Generates HTTP headers for Sentry distributed tracing, including a unique transaction ID, session ID if available, and Sentry trace and baggage headers when possible.
+ *
+ * @returns An object containing Sentry tracing headers for use in outgoing requests
+ */
 function getSentryTraceHeaders(): Record<string, string> {
 	const transactionId = createTransactionId();
 	const headers: Record<string, string> = {
@@ -66,6 +76,13 @@ function getSentryTraceHeaders(): Record<string, string> {
 	return headers;
 }
 
+/**
+ * Configures and returns Apollo client options with advanced features for error handling, token refresh, Sentry tracing, performance logging, and dynamic endpoint selection.
+ *
+ * Integrates Sentry for distributed tracing and error reporting, handles unauthorized errors by triggering token refresh and logout on failure, logs and reports network errors including rate limiting, and adds contextual headers from the application context. Performance metrics are logged and sent to Sentry as breadcrumbs. The Apollo cache is configured to avoid adding `__typename` to mutations, and default fetch policies disable caching.
+ *
+ * @returns Apollo client options with custom link chain, error handling, tracing, and cache configuration
+ */
 export function createApollo(
 	authService: AuthService,
 	globalErrorHandlerService: GlobalErrorHandlerService,
